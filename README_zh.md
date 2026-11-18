@@ -16,7 +16,7 @@
 
 ## 功能
 
-- **零工具**：预设不声明任何 `tool-*` 行；插件还会在该 agent 的 scope 上屏蔽其他插件注册的全局工具（`tools.restrict`），因此请求体里完全没有 `tools` 字段（不是空数组，是没有这个字段）。仅靠预设无法注销部署级插件贡献的工具，这一步是必要的。
+- **零工具**：预设不声明任何 `tool-*` 行；插件还会在预设 scope 上屏蔽其他插件注册的全局工具（`tools.restrict`），并在每个 agent 的首步再屏蔽一次（防止插件稍后注册工具）。因此请求体里完全没有 `tools` 字段（不是空数组，是没有这个字段）。仅靠预设无法注销部署级插件贡献的工具，这一步是必要的。
 - **无工作流提示词**：用一个 `complete` 系统提示段整体替换系统提示组装结果，包括 Harness 身份和全部工程规范段落。
 - **不注入环境**：屏蔽运行时上下文，不再附加 OS、Git、cwd、文件树快照。
 - **接近网页端的语气**：默认 `web-tone` 是一段原创的短提示词（80 tokens 以内），自然真诚、温和但有主见、不确定就直说，不用客服套话。`empty` 档彻底不要系统提示词。
@@ -83,12 +83,12 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 | `promptMode` | `web-tone`、`empty`、`custom` | `web-tone` | `empty` 完全不发系统提示词；`custom` 使用 `customPrompt`。 |
 | `customPrompt` | 字符串 | `""` | `promptMode: custom` 时使用；留空同样等于「无系统提示词」。 |
 | `temperature` | `0`–`1.5` 的数字，或 `null` | `1` | 只在非思考请求里发送；`null` 表示永不发送。 |
-| `defaultThinking` | `off`、`follow-ui` | `off` | `off` 让新建/清空后开始的会话关闭思考；`follow-ui` 跟随适配器默认值。 |
-| `traceFile` | 路径或 `null` | `null` | 可选诊断：每次模型调用追加一行 JSON，记录最终解析出的 provider/model/思考档位/temperature/token 上限。 |
+| `defaultThinking` | `off`、`follow-ui` | `off` | `off` 让「尚未记录思考档位」的新会话首轮关闭思考；`follow-ui` 跟随适配器默认值。 |
+| `traceFile` | 路径或 `null` | `null` | 可选诊断：分别记录挂载、工具屏蔽、思考档位决策与每次模型调用解析出的配置。 |
 
 ### 关于默认值
 
-- `defaultThinking: off` 只在「新建会话」或「清空后重开」的会话上生效，且只在 DeepSeek 路由上（其他 provider 可能不接受 `off`）。它刻意不以「尚未记录思考档位」为判据：本 Harness 会在界面出现任何选择之前，就用适配器默认值（`high`）初始化新会话。恢复的历史会话与压缩后重建的会话保留原有记录，你之后在界面里的选择同样优先。
+- `defaultThinking: off` 只作用于「还没有记录思考档位」的会话首轮，且只在 DeepSeek 路由上（其他 provider 可能不接受 `off`）。恢复的、继续的历史会话保留原有记录；你之后在界面里的选择同样优先。
 - 插件每次请求都会读取当前思考档位，因此你在界面里打开思考后，它会立刻停止注入 temperature。
 - 当前 Harness API 没有一等公民的 temperature 设置，插件通过 `agent/request` waterfall 注入。该钩子在上游已标记 deprecated（每次请求的控制项「没有替代 API」）；若未来 DSH 移除它，这个选项会静默失效，但不会中断聊天。
 
@@ -114,7 +114,7 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 { "traceFile": "~/.dsh/chat-mode-trace.jsonl" }
 ```
 
-每次模型调用会追加一行最终解析出的调用配置：provider、model、思考档位、temperature、token 上限；新会话建立时还会记一条起始决策（`{"via":"agent/created","source":"startup","applied":true}`）。**不会**记录消息正文或系统提示原文。
+每条都是小型 JSON：挂载一条（`via: apply`）、全局工具屏蔽一条（`via: maskGlobalTools`）、首轮思考决策一条（`via: agent/inbox/claimed`）、每次模型调用解析结果一条（`via: agent/request`，含 provider/model/思考档位/temperature/token 上限）。**不会**记录消息正文或系统提示原文。
 
 请求本身可由会话日志核对：`request/header`（模型、工具、控制项）与 `system/message`（系统提示）就是序列化的输入，二者结合一行 trace 即可完整证明请求形态，而无需落盘任何对话内容。
 

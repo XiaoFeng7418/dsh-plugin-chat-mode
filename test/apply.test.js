@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -10,15 +10,18 @@ import { WEB_TONE_PROMPT } from '../src/prompts.js'
  * Build a fake preset context that records what the plugin registers.
  *
  * @param {Record<string, unknown>} [config]
- * @param {{ traceFile?: string }} [extra]
+ * @param {{ traceFile?: string, presetNames?: string[], rejectPresetBatch?: boolean }} [extra]
  */
 function harness(config = {}, extra = {}) {
   /** @type {Array<any>} */
   const sections = []
   /** @type {Map<string, any>} */
   const listeners = new Map()
+  /** @type {Array<any>} */
+  const presetRestrictions = []
   let suppressed = 0
   process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'chat-mode-home-'))
+  const presetNames = extra.presetNames ?? []
   const ctx = {
     logger: { warn() {} },
     systemPrompt: {
@@ -28,6 +31,14 @@ function harness(config = {}, extra = {}) {
       },
       suppressRuntimeContext() {
         suppressed += 1
+        return () => {}
+      },
+    },
+    tools: {
+      definitions: () => presetNames.map((name) => ({ name })),
+      restrict: (filter) => {
+        if (extra.rejectPresetBatch === true && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
+        presetRestrictions.push(filter)
         return () => {}
       },
     },
@@ -43,7 +54,7 @@ function harness(config = {}, extra = {}) {
     ...config,
     ...(extra.traceFile === undefined ? {} : { traceFile: extra.traceFile }),
   })
-  return { sections, listeners, suppressed: () => suppressed }
+  return { sections, listeners, presetRestrictions, suppressed: () => suppressed }
 }
 
 /**
@@ -90,13 +101,28 @@ test('an empty prompt mode still registers the complete section with empty text'
   assert.equal(sections[0].complete, true)
 })
 
-test('agent creation masks every inherited global tool', () => {
+test('mounting masks every globally registered tool for the whole preset', () => {
+  const { presetRestrictions } = harness({}, { presetNames: ['bash', 'read', 'mcp__x__y'] })
+  assert.deepEqual(presetRestrictions, [{ deny: ['bash', 'read', 'mcp__x__y'] }])
+})
+
+test('an empty global tool set needs no preset restriction', () => {
+  const { presetRestrictions } = harness()
+  assert.deepEqual(presetRestrictions, [])
+})
+
+test('one unusable tool name at mount does not leave the others visible', () => {
+  const { presetRestrictions } = harness({}, { presetNames: ['code', 'read'], rejectPresetBatch: true })
+  assert.deepEqual(presetRestrictions, [{ deny: ['code'] }, { deny: ['read'] }])
+})
+
+test('agent creation masks every tool it still inherits', () => {
   const { listeners } = harness()
   const created = listeners.get('agent/created')
   assert.equal(typeof created, 'function')
-  const { agent, restrictions } = fakeAgent({ names: ['bash', 'read', 'mcp__x__y'] })
+  const { agent, restrictions } = fakeAgent({ names: ['late-tool', 'later-tool'] })
   created({ agent, source: 'startup' })
-  assert.deepEqual(restrictions, [{ deny: ['bash', 'read', 'mcp__x__y'] }])
+  assert.deepEqual(restrictions, [{ deny: ['late-tool', 'later-tool'] }])
 })
 
 test('an agent without inherited tools needs no restriction', () => {
@@ -106,47 +132,47 @@ test('an agent without inherited tools needs no restriction', () => {
   assert.deepEqual(restrictions, [])
 })
 
-test('one unusable tool name does not leave the others visible', () => {
-  const { listeners } = harness()
-  const { agent, restrictions } = fakeAgent({ names: ['code', 'read'], rejectBatch: true })
-  listeners.get('agent/created')({ agent, source: 'startup' })
-  assert.deepEqual(restrictions, [{ deny: ['code'] }, { deny: ['read'] }])
-})
-
-test('every later step re-masks tools registered lazily', () => {
+test('every later step re-masks lazily registered tools and passes the decision through', async () => {
   const { listeners } = harness()
   const preStep = listeners.get('agent/pre-step')
   assert.equal(typeof preStep, 'function')
   const { agent, restrictions } = fakeAgent({ names: ['late-tool'] })
-  preStep({ agent })
+  const decision = { kind: 'enter', messages: [] }
+  const result = await preStep({ agent }, () => Promise.resolve(decision))
   assert.deepEqual(restrictions, [{ deny: ['late-tool'] }])
+  assert.equal(result, decision)
 })
 
-test('default thinking reaches a startup session only', () => {
+test('default thinking applies to the first turn of a fresh session only', () => {
   const { listeners } = harness()
-  const created = listeners.get('agent/created')
-  for (const source of ['startup', 'clear']) {
-    const { agent, selections } = fakeAgent({ reasoningEffort: 'high' })
-    created({ agent, source })
-    assert.deepEqual(selections, [{ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off' }])
-  }
-  for (const source of ['resume', 'compact']) {
-    const { agent, selections } = fakeAgent({ reasoningEffort: 'high' })
-    created({ agent, source })
-    assert.deepEqual(selections, [])
-  }
+  const claimed = listeners.get('agent/inbox/claimed')
+  assert.equal(typeof claimed, 'function')
+
+  const first = fakeAgent()
+  claimed({ agent: first.agent, turn: 1 })
+  assert.deepEqual(first.selections, [{ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off' }])
+
+  const later = fakeAgent()
+  claimed({ agent: later.agent, turn: 2 })
+  assert.deepEqual(later.selections, [])
+
+  const chosen = fakeAgent({ reasoningEffort: 'high' })
+  claimed({ agent: chosen.agent, turn: 1 })
+  assert.deepEqual(chosen.selections, [])
+
+  const alreadyOff = fakeAgent({ reasoningEffort: 'off' })
+  claimed({ agent: alreadyOff.agent, turn: 1 })
+  assert.deepEqual(alreadyOff.selections, [])
 })
 
 test('default thinking leaves other providers alone and follow-ui disables it', () => {
-  const created = harness().listeners.get('agent/created')
+  const claimed = harness().listeners.get('agent/inbox/claimed')
   const other = fakeAgent({ provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V3' })
-  created({ agent: other.agent, source: 'startup' })
+  claimed({ agent: other.agent, turn: 1 })
   assert.deepEqual(other.selections, [])
 
-  const follow = harness({ defaultThinking: 'follow-ui' }).listeners.get('agent/created')
-  const chat = fakeAgent()
-  follow({ agent: chat.agent, source: 'startup' })
-  assert.deepEqual(chat.selections, [])
+  const follow = harness({ defaultThinking: 'follow-ui' }).listeners.get('agent/inbox/claimed')
+  assert.equal(follow, undefined)
 })
 
 test('temperature is attached to non-thinking requests only', async () => {
@@ -167,12 +193,12 @@ test('temperature is attached to non-thinking requests only', async () => {
   assert.equal(noTemperature.temperature, undefined)
 })
 
-test('a trace file records the created decision and the effective request', async () => {
+test('a trace file records the mount mask, the thinking decision and the request', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'chat-mode-'))
   const file = join(dir, 'trace.jsonl')
-  const { listeners } = harness({}, { traceFile: file })
-  const created = fakeAgent({ reasoningEffort: 'high' })
-  listeners.get('agent/created')({ agent: created.agent, source: 'startup' })
+  const { listeners } = harness({}, { traceFile: file, presetNames: ['bash'] })
+  const claimed = fakeAgent()
+  listeners.get('agent/inbox/claimed')({ agent: claimed.agent, turn: 1 })
 
   const request = listeners.get('agent/request')
   const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100 })
@@ -181,12 +207,14 @@ test('a trace file records the created decision and the effective request', asyn
   assert.equal(result.temperature, 1)
 
   const lines = readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
-  assert.equal(lines.length, 2)
-  assert.equal(lines[0].via, 'agent/created')
-  assert.equal(lines[0].applied, true)
-  assert.equal(lines[1].via, 'agent/request')
-  assert.equal(lines[1].reasoningEffort, 'off')
-  assert.equal(lines[1].temperature, 1)
+  assert.equal(lines[0].via, 'apply')
+  assert.equal(lines[0].defaultThinking, 'off')
+  const maskLine = lines.find((line) => line.via === 'maskGlobalTools')
+  assert.equal(maskLine?.count, 1)
+  const claimedLine = lines.find((line) => line.via === 'agent/inbox/claimed')
+  assert.equal(claimedLine?.applied, true)
+  const requestLine = lines.at(-1)
+  assert.equal(requestLine.via, 'agent/request')
+  assert.equal(requestLine.reasoningEffort, 'off')
+  assert.equal(requestLine.temperature, 1)
 })
-
-

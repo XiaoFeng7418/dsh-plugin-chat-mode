@@ -23,8 +23,8 @@ import { promptFor } from './prompts.js'
 /** Cordis plugin name. */
 export const name = 'chat-mode'
 
-/** Wait for the prompt registry before registering the section. */
-export const inject = ['systemPrompt']
+/** Wait for the prompt and tool registries before registering anything. */
+export const inject = ['systemPrompt', 'tools']
 
 /** Unique section name; duplicates inside one scope are rejected by the host. */
 const SECTION_NAME = 'chat-mode:prompt'
@@ -44,6 +44,7 @@ export function apply(ctx, config = {}) {
   const options = loadOptions(config, { warn })
   const traceFile = options.traceFile
   const trace = traceFile === null ? undefined : (/** @type {Record<string, unknown>} */ line) => writeTrace(traceFile, line, warn)
+  trace?.({ via: 'apply', promptMode: options.promptMode, temperature: options.temperature, defaultThinking: options.defaultThinking })
 
   // A complete section becomes the only section in the assembly, which drops
   // the harness identity and every engineering/workflow prompt. The runtime
@@ -57,16 +58,31 @@ export function apply(ctx, config = {}) {
   }), 'chat-mode.prompt')
   ctx.effect(() => ctx.systemPrompt.suppressRuntimeContext(), 'chat-mode.runtime-context')
 
-  ctx.on('agent/created', ({ agent, source }) => {
-    // A preset cannot unregister another plugin's global tools, so the agent
-    // scope masks them. This runs before the first step resolves its tool set.
-    stripTools(agent, warn)
-    if (options.defaultThinking === 'off') defaultToNonThinking(agent, source, warn, trace)
+  // A preset cannot unregister another plugin's global tools, so they are
+  // masked for this preset's whole scope first, and again on every later step
+  // for tools that a plugin registers after the preset mounted. This runs
+  // before any agent of this preset resolves its tool set.
+  maskGlobalTools(ctx, warn, trace)
+
+  ctx.on('agent/created', (payload) => {
+    trace?.({ via: 'agent/created:enter', source: payload?.source ?? null, hasAgent: payload?.agent !== undefined })
+    stripTools(payload?.agent, warn, trace)
   })
 
   // Keep masking on later steps too: a plugin that registers a tool lazily
-  // must not smuggle it into an existing chat.
-  ctx.on('agent/pre-step', ({ agent }) => stripTools(agent, warn))
+  // must not smuggle it into an existing chat. The listener must hand the
+  // step decision through: a waterfall listener that returns nothing would
+  // replace the prepared step with `undefined`.
+  ctx.on('agent/pre-step', (payload, next) => {
+    stripTools(payload.agent, warn, trace)
+    return next()
+  })
+
+  // The claimed event runs inside `inbox.claim()`, before the step captures
+  // its model selection, so selecting here reaches the first request.
+  if (options.defaultThinking === 'off') {
+    ctx.on('agent/inbox/claimed', (payload) => defaultToNonThinking(payload?.agent, payload?.turn, warn, trace))
+  }
 
   ctx.on('agent/request', async (payload, next) => {
     const resolved = await next()
@@ -87,30 +103,68 @@ export function apply(ctx, config = {}) {
 }
 
 /**
- * Start a new DeepSeek chat without thinking. The gate is the session start
- * source rather than the recorded effort, because this harness fills a fresh
- * session with the adapter default (`high`) before the UI ever shows a choice;
- * a resumed or compacted session keeps whatever it recorded.
+ * Start a new DeepSeek chat without thinking, but only on the first turn and
+ * only while the session has not recorded a reasoning level. The harness seeds
+ * a fresh session with the adapter default (`high`) before the UI shows any
+ * choice, so "no recorded level" is the signal that nothing was chosen yet.
  *
  * @param {any} agent Agent created under this preset.
- * @param {string} source Session start source: startup, resume, clear or compact.
+ * @param {number | undefined} turn Turn that claimed the message.
  * @param {(message: string) => void} warn
  * @param {((line: Record<string, unknown>) => void) | undefined} trace
  */
-function defaultToNonThinking(agent, source, warn, trace) {
+function defaultToNonThinking(agent, turn, warn, trace) {
   try {
     const current = agent?.model?.current?.()
-    const fresh = source === 'startup' || source === 'clear'
-    const applied = fresh
+    const applied = turn === 1
       && current !== undefined
-      && current.reasoningEffort !== 'off'
+      && current.reasoningEffort === undefined
       && isDeepSeekProvider(current.provider)
       && typeof current.model === 'string'
-    trace?.({ via: 'agent/created', source, current: current ?? null, applied })
+    trace?.({ via: 'agent/inbox/claimed', turn: turn ?? null, current: current ?? null, applied })
     if (!applied) return
     agent.model.select({ provider: current.provider, model: current.model, reasoningEffort: 'off' })
   } catch (error) {
     warn(`could not default the reasoning effort: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Mask every globally registered tool for the whole preset scope.
+ *
+ * A preset cannot unregister another plugin's rows, and those tools are
+ * registered globally, so the preset's own scope is where they can be hidden:
+ * every agent under it inherits the restriction, and the first request is
+ * already covered (the per-agent hooks would run too late for step one).
+ *
+ * @param {any} ctx Preset-scoped Cordis context.
+ * @param {(message: string) => void} warn
+ * @param {((line: Record<string, unknown>) => void) | undefined} trace
+ */
+function maskGlobalTools(ctx, warn, trace) {
+  try {
+    const tools = ctx?.tools
+    if (tools === undefined) {
+      trace?.({ via: 'maskGlobalTools:no-service' })
+      return
+    }
+    const names = tools.definitions().map((/** @type {any} */ definition) => definition.name)
+    trace?.({ via: 'maskGlobalTools', count: names.length })
+    if (names.length === 0) return
+    try {
+      tools.restrict({ deny: names })
+    } catch {
+      for (const name of names) {
+        try {
+          tools.restrict({ deny: [name] })
+        } catch {
+          warn(`could not restrict tool "${name}"`)
+        }
+      }
+    }
+  } catch (error) {
+    trace?.({ via: 'maskGlobalTools:error', message: error instanceof Error ? error.message : String(error) })
+    warn(`could not mask global tools: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -124,26 +178,33 @@ function defaultToNonThinking(agent, source, warn, trace) {
  * @param {any} agent Agent created under this preset.
  * @param {(message: string) => void} warn
  */
-function stripTools(agent, warn) {
+function stripTools(agent, warn, trace) {
   try {
     const tools = agent?.ctx?.tools
-    if (tools === undefined) return
+    if (tools === undefined) {
+      trace?.({ via: 'stripTools:no-service' })
+      return
+    }
     const names = tools.definitions(agent).map((/** @type {any} */ definition) => definition.name)
+    trace?.({ via: 'stripTools', count: names.length })
     if (names.length === 0) return
     try {
       tools.restrict({ deny: names })
-    } catch {
+    } catch (batchError) {
+      trace?.({ via: 'stripTools:batch-failed', message: batchError instanceof Error ? batchError.message : String(batchError) })
       // One unusable name (for example the reserved code-mode transport) must
       // not leave every other tool visible, so fall back to one name at a time.
       for (const name of names) {
         try {
           tools.restrict({ deny: [name] })
-        } catch {
+        } catch (error) {
+          trace?.({ via: 'stripTools:failed', name, message: error instanceof Error ? error.message : String(error) })
           warn(`could not restrict tool "${name}"`)
         }
       }
     }
   } catch (error) {
+    trace?.({ via: 'stripTools:error', message: error instanceof Error ? error.message : String(error) })
     warn(`could not restrict tools: ${error instanceof Error ? error.message : String(error)}`)
   }
 }

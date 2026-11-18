@@ -25,11 +25,12 @@ a conversation does not need.
 
 ## What it does
 
-- **Zero tools.** The preset declares no `tool-*` rows, and the plugin also masks
-  every global tool other plugins register on that agent's scope
-  (`tools.restrict`), so the request has no `tools` field at all — not an empty
-  array, no field. Without the mask a preset alone cannot unregister tools that
-  a deployment-level plugin contributes.
+- **Zero tools.** The preset declares no `tool-*` rows, and the plugin masks
+  every global tool other plugins register at the preset scope (`tools.restrict`),
+  then re-masks each agent on its first step for tools registered later. The
+  request therefore has no `tools` field at all — not an empty array, no field.
+  Without the mask a preset alone cannot unregister tools that a deployment-level
+  plugin contributes.
 - **No workflow prompt.** One `complete` system-prompt section replaces the
   whole assembly, including the harness identity and every engineering section.
 - **No environment injection.** Runtime context is suppressed, so no OS, git,
@@ -115,17 +116,15 @@ ignored rather than breaking the preset.
 | `promptMode` | `web-tone`, `empty`, `custom` | `web-tone` | `empty` sends no system prompt at all; `custom` uses `customPrompt`. |
 | `customPrompt` | string | `""` | Used when `promptMode` is `custom`. An empty value also means "no system prompt". |
 | `temperature` | number `0`–`1.5`, or `null` | `1` | Sent only on non-thinking requests. `null` never sends one. |
-| `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts a fresh chat with thinking disabled unless you already chose a level; `follow-ui` keeps the adapter default. |
-| `traceFile` | path or `null` | `null` | Opt-in diagnostic: append one JSON line per model call with the resolved provider, model, effort, temperature and token cap. |
+| `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts the first turn of a new chat without thinking unless a level is already recorded; `follow-ui` keeps the adapter default. |
+| `traceFile` | path or `null` | `null` | Opt-in diagnostic: append JSON lines for the mount, the tool mask, the thinking decision and each resolved model call. |
 
 ### About the defaults
 
-- `defaultThinking: off` applies when a session is started or cleared, and only
-  on DeepSeek routes (other providers may reject the `off` effort). It is
-  deliberately not based on "no reasoning level recorded": this harness seeds a
-  brand-new session with the adapter default (`high`) before the UI shows any
-  choice. Resumed and compacted sessions keep whatever they recorded, and your
-  later UI choice is respected.
+- `defaultThinking: off` applies to the first turn of a chat that has no recorded
+  reasoning level, and only on DeepSeek routes (other providers may reject the
+  `off` effort). A restored or continued session keeps whatever it recorded,
+  and any level you pick in the UI later wins.
 - The plugin observes the reasoning level on every request, so turning thinking
   on in the UI immediately stops temperature injection for that chat.
 - Temperature has no first-class setting in the current harness API, so the
@@ -156,11 +155,11 @@ Set `traceFile` to a path outside the repository:
 { "traceFile": "~/.dsh/chat-mode-trace.jsonl" }
 ```
 
-Each model call appends one line with the resolved call configuration — provider,
-model, reasoning effort, temperature and token cap — plus the session-start
-decision when a new chat begins (`{"via":"agent/created","source":"startup",
-"applied":true}`). Message bodies and system-prompt text are deliberately not
-recorded.
+Each line is a small JSON object: one for the mount (`via: apply`), one for the
+global-tool mask (`via: maskGlobalTools`), one when a first turn decides the
+reasoning level (`via: agent/inbox/claimed`), and one per resolved model call
+(`via: agent/request`) with provider, model, effort, temperature and token cap.
+Message bodies and system-prompt text are deliberately not recorded.
 
 For the request itself, a session log already carries the authoritative pieces:
 `request/header` (model, tools and controls) and `system/message` (the system
