@@ -78,7 +78,7 @@ omitted. The two screenshots above are that same greeting in both modes
   compaction backend, and it only runs when the context window is under
   pressure; ordinary turns get no extra system text.
 - **No default preset is modified.** The plugin inserts new loader/preset ids
-  (`preset-chat` / `chat`); Standard, PTC, Minimal and Creator are untouched.
+  (`preset-chat` / `chat`); Standard, PTC, Minimal, Creative and any other presets you have installed are untouched.
 
 ## Install
 

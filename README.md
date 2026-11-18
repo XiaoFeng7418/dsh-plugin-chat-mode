@@ -48,7 +48,7 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 - **对话向采样参数**：非思考请求默认 `temperature: 1`（可配 0–1.5）。
 - **保留思考模式**：照常在界面里选档位；思考开启时插件不再发送 `temperature`。
 - **长对话仍可压缩**：内置标准压缩后端，只在上下文接近上限时触发；普通轮次不会往系统提示里加东西。
-- **不改动任何默认预设**：新增 Loader/Preset id（`preset-chat` / `chat`），标准、PTC、极简、Creator、学习、答疑等模式都不受影响。
+- **不改动任何默认预设**：新增 Loader/Preset id（`preset-chat` / `chat`），标准（Standard）、PTC、极简（Minimal）、创造（Creative）以及你已安装的其他自定义模式都不受影响。
 
 ## 安装
 
