@@ -230,6 +230,18 @@ recording any conversation content.
      by other plugins, runtime reminders), measured at about **3.9K input
      tokens**. This should converge once DSH Go ships a newer engine; with only
      this plugin installed the difference is negligible.
+4. If you want the phone to feel as lean as the desktop:
+   - On `rc.1` those leftover nine tools (`list_agents`, `send_message`,
+     `wait_agent`, `team_task_*`, …) are registered by the **Agent Teams /
+     `agent-teams`** plugin on **each agent's own scope**. `tools.restrict` only
+     removes **global** registrations by design, so this plugin cannot mask them
+     there (on desktop `rc.3+` the same tools are global, which is why masking
+     works).
+   - Practical tip: if a casual chat does not need multi-agent collaboration,
+     temporarily disable **`agent-teams`** in DSH Go's plugin manager (and any
+     other global plugin you do not need that injects context), and those nine
+     tools disappear — close to the desktop experience. Once DSH Go ships an
+     `rc.3+` engine, no manual disabling is needed.
 
 
 ## Credits
