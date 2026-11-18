@@ -79,10 +79,14 @@ export function apply(ctx, config = {}) {
   })
 
   // The claimed event runs inside `inbox.claim()`, before the step captures
-  // its model selection, so selecting here reaches the first request.
-  if (options.defaultThinking === 'off') {
-    ctx.on('agent/inbox/claimed', (payload) => defaultToNonThinking(payload?.agent, payload?.turn, warn, trace))
-  }
+  // its model selection and before it resolves its tool set, so both the
+  // thinking default and the tool mask reach the very first request. Masking
+  // here as well matters on runtimes where other plugins register their tools
+  // after the preset mounted: the preset-scope mask cannot know their names.
+  ctx.on('agent/inbox/claimed', (payload) => {
+    stripTools(payload?.agent, warn, trace)
+    if (options.defaultThinking === 'off') defaultToNonThinking(payload?.agent, payload?.turn, warn, trace)
+  })
 
   ctx.on('agent/request', async (payload, next) => {
     const resolved = await next()

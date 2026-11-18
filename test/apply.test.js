@@ -171,8 +171,20 @@ test('default thinking leaves other providers alone and follow-ui disables it', 
   claimed({ agent: other.agent, turn: 1 })
   assert.deepEqual(other.selections, [])
 
-  const follow = harness({ defaultThinking: 'follow-ui' }).listeners.get('agent/inbox/claimed')
-  assert.equal(follow, undefined)
+  const followHarness = harness({ defaultThinking: 'follow-ui' })
+  const follow = followHarness.listeners.get('agent/inbox/claimed')
+  assert.equal(typeof follow, 'function')
+  const untouched = fakeAgent()
+  follow({ agent: untouched.agent, turn: 1 })
+  assert.deepEqual(untouched.selections, [])
+})
+
+test('the first turn masks inherited tools before its tool set is resolved', () => {
+  const { listeners } = harness()
+  const claimed = listeners.get('agent/inbox/claimed')
+  const { agent, restrictions } = fakeAgent({ names: ['bash', 'list_agents'] })
+  claimed({ agent, turn: 1 })
+  assert.deepEqual(restrictions, [{ deny: ['bash', 'list_agents'] }])
 })
 
 test('temperature is attached to non-thinking requests only', async () => {

@@ -206,11 +206,30 @@ recording any conversation content.
 ## Compatibility
 
 - DSH Desktop / `dsh web`: tested against the current Desktop bundle.
-- DSH Go and other clients built on the same DSH runtime: the preset is served
-  by the harness preset registry, so a client that reads the roster
-  dynamically should list it the same way the Web UI does. This has not been
-  verified on a phone; treat it as "expected to work, pending device test".
+- **Android DSH Go: verified on-device (1.1.0, bundled engine `0.2.2-rc.1`).**
+  Install it from the web UI under Plugins → `+` (package name, GitHub URL, or
+  a local directory path), enable it, then pick **Chat (lightweight)** from the
+  preset picker in the *web* interface — see the next section.
 - No native dependencies, no platform checks beyond none, no build step.
+
+### On DSH Go (Android)
+
+1. In DSH Go open Plugins → `+` in the sidebar, enter
+   `github:<your-user>/dsh-plugin-chat-mode`, the npm package name, or a local
+   directory path that exists on the phone, install, then tap "enable".
+2. The **native UI only offers DSH Go's own modes** (Work / Companion / Tavern)
+   and does not show DSH presets. Tap "switch to web interface" in the sidebar,
+   then pick **Chat (lightweight)** from the preset picker on a new session.
+3. What differs, honestly:
+   - Desktop (engine `rc.3` and newer): no `tools` field, a 61-character system
+     prompt, about **1.9K input tokens** per short turn.
+   - The `rc.1` engine bundled in DSH Go: the system prompt takes effect and the
+     request goes through the same no-tools path, but **a few context blocks or
+     tools injected by other global plugins may still appear** (tools registered
+     by other plugins, runtime reminders), measured at about **3.9K input
+     tokens**. This should converge once DSH Go ships a newer engine; with only
+     this plugin installed the difference is negligible.
+
 
 ## Credits
 

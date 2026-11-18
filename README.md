@@ -147,15 +147,24 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 ## 兼容性
 
 - 需要支持 preset roster 的 DSH 构建：桌面端（Web 界面）可用；`dsh headless` 明确不组合 preset，无法使用。
-- DSH Go（`ccch1mneyyy/dsh-go`）运行的是同一套 DSH 引擎，理论上兼容基于同源 DSH 运行时的客户端（如 DSH Go），**待实机验证**。插件零原生依赖、纯标准 Node ESM，可直接 `adb push` 或从 GitHub 安装测试。
+- **安卓 DSH Go 已实机验证（1.1.0，内置引擎 0.2.2-rc.1）**：可从网页界面的「插件 → +」用包名 / GitHub 地址 / 本地目录安装，装好后在**网页界面**的模式选择器里选「Chat（轻量对话）」使用（详见下一节）。
 - 本插件不修改 `node_modules`，也不写 profile 的 `package.json`：安装由 `dsh plugin add` 写进 profile 依赖与 `dsh.profile.bundles`，bundle 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，Loader 启动时插入 `preset-chat` 行。
+
+### 在 DSH Go（安卓）上使用
+
+1. 打开 DSH Go，进入侧栏的「插件 → +」，填入 `github:<你的用户名>/dsh-plugin-chat-mode`、npm 包名，或已推送到手机上的本地目录路径，安装后点「立即启用」。
+2. DSH Go 的**原生界面只有内置的「工作 / 伙伴小屋 / 酒馆」模式**，不显示 DSH preset。点侧栏里的「切换到网页界面」，在网页界面的新会话页打开模式选择器，选 **Chat（轻量对话）**。
+3. 效果差异（如实说明）：
+   - 桌面端（引擎 `rc.3` 及以上）实测：请求无 `tools` 字段、系统提示词 61 字符，输入约 **1.9K tokens**。
+   - DSH Go 内置的 `rc.1` 引擎实测：系统提示词正常生效、同样无 `tools` 字段的请求路径一致，但**可能残留少量其他全局插件注入的上下文或工具**（例如其他插件注册的工具、运行环境提醒），实测输入约 **3.9K tokens**；待 DSH Go 升级引擎后会进一步对齐。只装本插件时可忽略这一差异。
+
 
 ## 开发
 
 ```sh
 pnpm install
 pnpm run typecheck   # tsc --noEmit + checkJs
-pnpm test            # node:test，20 条
+pnpm test            # node:test，21 条
 ```
 
 修改后重新挂载即可生效：`dsh plugin --profile <name> add /绝对路径/dsh-plugin-chat-mode`。桌面端同一路径重装会提示重启；换一个新目录安装可以让运行中的应用重新加载。
