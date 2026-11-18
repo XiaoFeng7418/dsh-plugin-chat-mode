@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output (this plugin ships plain ESM, but keep generated dirs out)
+dist/
+lib/
+*.tsbuildinfo
+
+# Local secrets and logs
+.env
+.env.*
+*.log
+
+# Local request-shape traces
+*.trace.jsonl
+chat-mode.trace.jsonl
+
+# OS noise
+.DS_Store
+Thumbs.db

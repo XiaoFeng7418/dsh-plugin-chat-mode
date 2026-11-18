@@ -1,0 +1,39 @@
+# dsh-plugin-chat-mode
+#
+# Inserts one self-contained agent preset (`chat`) that the Web / Desktop mode
+# switcher lists next to Standard, PTC, Minimal and Creator. It never touches
+# those presets: the loader row id and the preset id below are both new, so an
+# unrelated preset with the same config is impossible.
+#
+# A preset's `plugins` array is the complete agent tree for that mode. This one
+# declares no `tool-*` rows at all, which is why a chat request carries no tool
+# schemas: the loop drops `tools` from the header when the registry is empty.
+# Global tools contributed by deployment plugins cannot be unregistered here, so
+# the `chat-mode` row masks them on each agent's scope as well; see README.
+# Everything configurable lives on the single `chat-mode` row.
+- insert:
+    - id: preset-chat
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: chat
+        name: Chat
+        description: Everyday conversation with no tools, no workflow prompt and no environment snapshot.
+        order: 4
+        plugins:
+          - id: chat-mode
+            name: dsh-plugin-chat-mode
+            config:
+              promptMode: web-tone
+              temperature: 1
+              defaultThinking: off
+          # Keep long chats usable without adding any user-visible tool. The
+          # engine only runs when the context window is under pressure; ordinary
+          # turns get no extra system text.
+          - id: chat-compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'

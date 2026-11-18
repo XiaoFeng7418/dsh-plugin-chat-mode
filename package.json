@@ -1,0 +1,56 @@
+{
+  "name": "dsh-plugin-chat-mode",
+  "version": "0.1.0",
+  "description": "A minimal, tool-free chat mode for DeepSeek Harness: no workflow prompt, no environment snapshot, no tool schemas.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README_zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "agent-preset",
+    "chat",
+    "minimal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XiaoFeng7418/dsh-plugin-chat-mode.git"
+  },
+  "homepage": "https://github.com/XiaoFeng7418/dsh-plugin-chat-mode#readme",
+  "bugs": {
+    "url": "https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.js"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
