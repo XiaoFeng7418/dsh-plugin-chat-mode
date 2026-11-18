@@ -207,7 +207,7 @@ recording any conversation content.
 
 - DSH Desktop / `dsh web`: tested against the current Desktop bundle.
 - **Android DSH Go: verified on-device (1.1.0, bundled engine `0.2.2-rc.1`).**
-  Install it from the web UI under Plugins → `+` (package name, GitHub URL, or
+  Install it from the web UI under Plugins → `+` (GitHub URL, release tarball, or
   a local directory path), enable it, then pick **Chat (lightweight)** from the
   preset picker in the *web* interface — see the next section.
 - No native dependencies, no platform checks beyond none, no build step.

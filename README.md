@@ -147,7 +147,7 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 ## 兼容性
 
 - 需要支持 preset roster 的 DSH 构建：桌面端（Web 界面）可用；`dsh headless` 明确不组合 preset，无法使用。
-- **安卓 DSH Go 已实机验证（1.1.0，内置引擎 0.2.2-rc.1）**：可从网页界面的「插件 → +」用包名 / GitHub 地址 / 本地目录安装，装好后在**网页界面**的模式选择器里选「Chat（轻量对话）」使用（详见下一节）。
+- **安卓 DSH Go 已实机验证（1.1.0，内置引擎 0.2.2-rc.1）**：可从网页界面的「插件 → +」用 GitHub 地址 / Release `.tgz` 链接 / 本地目录安装，装好后在**网页界面**的模式选择器里选「Chat（轻量对话）」使用（详见下一节）。
 - 本插件不修改 `node_modules`，也不写 profile 的 `package.json`：安装由 `dsh plugin add` 写进 profile 依赖与 `dsh.profile.bundles`，bundle 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，Loader 启动时插入 `preset-chat` 行。
 
 ### 在 DSH Go（安卓）上使用
