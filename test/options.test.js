@@ -107,7 +107,10 @@ test('prompt modes resolve to the tone prompt, the custom text or nothing', () =
 })
 
 test('the shipped tone prompt stays short enough to be cheaper than one tool schema', () => {
-  const words = WEB_TONE_PROMPT.split(/\s+/).filter(Boolean)
-  assert.ok(words.length <= 70, `tone prompt has ${words.length} words`)
-  assert.ok(WEB_TONE_PROMPT.length <= 400, `tone prompt has ${WEB_TONE_PROMPT.length} characters`)
+  // 中文没有空格，按字符数做上限；DeepSeek 分词下 1 个常用汉字约 1 token，
+  // 因此 90 字天然落在 80 tokens 的目标附近，并留出标点余量。
+  assert.ok(WEB_TONE_PROMPT.length <= 90, `tone prompt has ${WEB_TONE_PROMPT.length} characters`)
+  assert.ok(!WEB_TONE_PROMPT.includes('\n'), 'tone prompt stays on one line')
+  assert.match(WEB_TONE_PROMPT, /用用户提问的语言回答/, 'tone prompt follows the user language')
+  assert.match(WEB_TONE_PROMPT, /客服腔/, 'tone prompt rules out canned service phrasing')
 })

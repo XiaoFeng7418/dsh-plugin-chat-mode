@@ -16,8 +16,8 @@
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: chat
-        name: Chat
-        description: Everyday conversation with no tools, no workflow prompt and no environment snapshot.
+        name: Chat（轻量对话）
+        description: 无工具、无工作流提示词、无环境快照的日常聊天模式。
         order: 4
         plugins:
           - id: chat-mode

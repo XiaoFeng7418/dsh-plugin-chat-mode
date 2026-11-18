@@ -1,31 +1,25 @@
 /**
- * Default `web-tone` system prompt.
+ * 默认 `web-tone` 系统提示词。
  *
- * This is an original prompt, not a copy of any DeepSeek product text. It aims
- * at the tone of a good everyday chat: direct, warm without flattery, willing
- * to disagree, honest about uncertainty. Kept well under 80 tokens so the whole
- * system prompt costs less than a single tool schema in the default modes.
+ * 这是一段原创提示词，不是任何 DeepSeek 产品文案的复制。目标手感是「一次好
+ * 的日常对话」：直接、真诚、有温度但不讨好，有主见、敢说不同意，不确定就
+ * 坦白。整段控制在 80 tokens 以内，让整套系统提示的成本低于默认模式里一个
+ * 工具 schema。用户用其他语言提问时，模型会跟随该语言作答。
  *
  * @module dsh-plugin-chat-mode/prompts
  */
 
-/** The shipped `web-tone` prompt (about 55 tokens). */
-export const WEB_TONE_PROMPT = [
-  'You are a thoughtful assistant in an everyday conversation.',
-  'Reply in the language the user writes in: natural, warm, honest, concise.',
-  'Skip flattery and canned openers. Give your real view, disagree when you',
-  "disagree, and say plainly when you are unsure.",
-].join(' ')
+/** 内置的 `web-tone` 提示词（约 70 个汉字，估算 60–70 tokens）。 */
+export const WEB_TONE_PROMPT = '你是一个自然真诚的对话助手，用用户提问的语言回答。中文时简洁口语化，有自己的判断，不同意就直说，不确定就坦白，别用客服腔。'
 
 /**
- * Resolve the system prompt text for the configured mode.
+ * 解析当前配置对应的系统提示词文本。
  *
- * `empty` deliberately returns an empty string: the preset still registers a
- * complete prompt section (so no inherited section sneaks in), and the request
- * serializer omits the `system` field entirely when the text is empty.
+ * `empty` 刻意返回空串：预设仍然注册一个 complete 段落（防止继承的段落混
+ * 入），而请求序列化时会把空的 `system` 字段整体省略。
  *
  * @param {{ promptMode: 'web-tone' | 'empty' | 'custom', customPrompt: string }} options
- * @returns {string} Prompt text; may be empty.
+ * @returns {string} 提示词文本，可能为空。
  */
 export function promptFor(options) {
   if (options.promptMode === 'empty') return ''

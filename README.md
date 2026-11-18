@@ -1,188 +1,160 @@
+简体中文 | [English](README_en.md)
+
 # dsh-plugin-chat-mode
 
-A minimal, **tool-free chat preset** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）添加一个**极简、零工具、超省 Token** 的 `Chat` 模式。
+保留同一个 Harness、同一套会话和界面，只去掉日常聊天用不到的东西，让语气和用量都接近 DeepSeek 网页版。
 
-It adds a `chat` mode to the mode switcher: no tool schemas, no engineering
-workflow prompt, no environment snapshot — just a short conversation-tone system
-prompt and a temperature that suits everyday chat. It is meant for the times
-when you want to use the API like the DeepSeek web app instead of starting a
-coding agent.
+## 为什么值得用
 
-## Why
+默认模式是为「干活」设计的。即使你只是问一句「帮我润色下这句话」，每次请求也要带上：
 
-The default presets are built for work. Every request carries dozens of tool
-schemas plus a multi-kilobyte system prompt with file-editing discipline,
-planning rules and a runtime snapshot of the OS, git state, cwd and file tree.
-That is the right trade-off for agent work, and the wrong one for "explain this
-paragraph to me":
+- 70 多个工具的 schema（`bash`、`read`、`write`、`edit`、`glob`、`grep`、`subagent`、MCP 工具……）；
+- 一万多字符的系统提示词，包含文件操作纪律、Agent 工作流、Git/OS/目录树快照；
+- 编码模式偏好的 `temperature: 0`，聊起天来干巴巴。
 
-- tool definitions dominate the prompt even when no tool is ever called;
-- the workflow language makes the model sound like a task worker ("当然可以！我很乐意为您解答");
-- a chat that never touches the filesystem still pays for the filesystem rules.
+这些内容对聊天毫无用处，却每一轮都在计费，也让模型下意识用「打工人」口吻回答。
 
-This plugin keeps the same harness, session model and UI, and removes the parts
-a conversation does not need.
+Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`），**不覆盖** Standard、PTC、Minimal、Creator。
 
-## What it does
+### 实测对比（首次请求，输入「用一句话打个招呼」）
 
-- **Zero tools.** The preset declares no `tool-*` rows, and the plugin masks
-  every global tool other plugins register at the preset scope (`tools.restrict`),
-  then re-masks each agent on its first step for tools registered later. The
-  request therefore has no `tools` field at all — not an empty array, no field.
-  Without the mask a preset alone cannot unregister tools that a deployment-level
-  plugin contributes.
-- **No workflow prompt.** One `complete` system-prompt section replaces the
-  whole assembly, including the harness identity and every engineering section.
-- **No environment injection.** Runtime context is suppressed, so no OS, git,
-  cwd or file-tree snapshot is added.
-- **Web-like tone.** The default `web-tone` prompt is an original prompt under
-  80 tokens: natural, warm, willing to disagree, honest about uncertainty, no
-  canned service phrases. `empty` removes the system prompt entirely.
-- **Chat-friendly sampling.** Non-thinking requests default to `temperature: 1`
-  (configurable 0–1.5), instead of the flat `0` that coding modes like.
-- **Thinking stays available.** Pick a thinking level in the UI as usual; the
-  plugin then stops sending a temperature, because thinking requests should not
-  carry one.
-- **Long conversations still compact.** The preset includes the standard
-  compaction backend, and it only runs when the context window is under
-  pressure; ordinary turns get no extra system text.
-- **No default preset is modified.** The plugin inserts new loader/preset ids
-  (`preset-chat` / `chat`); Standard, PTC, Minimal and Creator are untouched.
+| 指标 | Standard 模式 | Chat（`web-tone`） | Chat（`empty`） |
+| --- | --- | --- | --- |
+| `tools` 字段 | 72 个 schema | **不存在** | **不存在** |
+| `system` | 约 15,478 字符 | 约 70 字语气提示 | **为空（字段不出现）** |
+| 思考模式 | 开启，effort `high` | 默认关闭 | 默认关闭 |
+| `temperature` | 不发送 | **1.0** | **1.0** |
+| 输入 Token | 24,243 | **1,896** | **1,842** |
 
-## Install
+约 **12.8 倍**的输入 Token 降幅，且请求里不会出现 `"tools": []` 这种空数组——是整个字段省略。
 
-Once published on GitHub:
+## 功能
+
+- **零工具**：预设不声明任何 `tool-*` 行；插件还会在预设作用域上屏蔽其他插件注册的全局工具（`tools.restrict`），并在每个 agent 的首步再屏蔽一次（防止插件稍后注册工具）。请求体里完全没有 `tools` 字段。
+- **无工作流提示词**：用一个 `complete` 系统提示段整体替换系统提示组装结果，Harness 身份和全部工程规范段落一并消失。
+- **不注入环境**：屏蔽运行时上下文，不再附加 OS、Git、cwd、文件树快照。
+- **接近网页端的语气**：默认 `web-tone` 是原创中文短提示词（约 70 字，估算 60–70 tokens），自然真诚、有主见、不讨好；用户换语言提问时自动跟随该语言。`empty` 档彻底不要系统提示词。
+- **对话向采样参数**：非思考请求默认 `temperature: 1`（可配 0–1.5）。
+- **保留思考模式**：照常在界面里选档位；思考开启时插件不再发送 `temperature`。
+- **长对话仍可压缩**：内置标准压缩后端，只在上下文接近上限时触发；普通轮次不会往系统提示里加东西。
+- **不改动任何默认预设**：新增 Loader/Preset id（`preset-chat` / `chat`），标准、PTC、极简、Creator、学习、答疑等模式都不受影响。
+
+## 安装
+
+### 桌面端
+
+**插件 → 添加插件**，填入下面任一规格（桌面端插件页由应用管理，CLI 会拒绝 `--profile desktop`，这是设计行为）。
+
+### CLI / 其他 DSH 客户端
 
 ```sh
 dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode
 ```
 
-Pin a commit for reproducibility:
+固定到某个提交：
 
 ```sh
-dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#<sha>
+dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.2
 ```
 
-For the Desktop app, open **Plugins → Add plugin** and install the same GitHub
-spec. (`--profile desktop` is owned by the Desktop app, so the CLI refuses it by
-design; use the app's plugin page there.)
-
-Local development, no publish step:
+从 Release 的 `.tgz` 安装（不经过 GitHub 源码构建）：
 
 ```sh
-dsh plugin --profile <profile> add /absolute/path/to/dsh-plugin-chat-mode
+dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.2/dsh-plugin-chat-mode-0.1.2.tgz
 ```
 
-Then start (or restart) DSH, open a new chat, and choose **Chat** in the mode
-switcher.
+本地开发调试（目录直接链接进 profile，改完重新挂载即可）：
 
-Requirements: a DSH build whose preset roster supports the Web/Desktop UI
-(this plugin targets the `0.2.x` bundle layout). It is plain ESM with no
-runtime dependencies and no native code.
-
-## Configuration
-
-Defaults live on the `chat-mode` row in [`cordis.patch.yml`](cordis.patch.yml):
-
-```yaml
-- id: chat-mode
-  name: dsh-plugin-chat-mode
-  config:
-    promptMode: web-tone
-    temperature: 1
-    defaultThinking: off
+```sh
+dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 ```
 
-Preset sub-rows are intentionally **read-only** in the Web plugin inventory:
-DSH shows them as "provided by an agent preset" instead of offering a form. To
-tune this mode without editing the installed profile patch, write a small user
-file:
+安装后打开新会话，在模式切换器里选 **Chat（轻量对话）**。
 
-`$DSH_HOME/chat-mode.json` (`~/.dsh/chat-mode.json` by default)
+## 配置
+
+`cordis.patch.yml` 里的预设子行是**只读**的（DSH 的设计：预设提供的配置不允许在 Web 设置页修改，避免一个模式的行为被本地改动悄悄覆盖）。日常调参请写用户覆盖文件：
+
+`~/.dsh/chat-mode.json`（Windows 通常是 `C:\Users\<你>\.dsh\chat-mode.json`）：
 
 ```json
 {
   "promptMode": "web-tone",
-  "temperature": 1,
+  "temperature": 1.0,
   "defaultThinking": "off"
 }
 ```
 
-The file overrides the row config, and invalid values are warned about and
-ignored rather than breaking the preset.
+优先级从低到高：内置默认值 → `cordis.patch.yml` 里的行配置 → `~/.dsh/chat-mode.json`。文件不存在时就是纯默认，写错 JSON 只报警告、不会让模式失效。
 
-| Option | Values | Default | Effect |
+| 选项 | 取值 | 默认 | 作用 |
 | --- | --- | --- | --- |
-| `promptMode` | `web-tone`, `empty`, `custom` | `web-tone` | `empty` sends no system prompt at all; `custom` uses `customPrompt`. |
-| `customPrompt` | string | `""` | Used when `promptMode` is `custom`. An empty value also means "no system prompt". |
-| `temperature` | number `0`–`1.5`, or `null` | `1` | Sent only on non-thinking requests. `null` never sends one. |
-| `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts the first turn of a new chat without thinking unless a level is already recorded; `follow-ui` keeps the adapter default. |
-| `traceFile` | path or `null` | `null` | Opt-in diagnostic: append JSON lines for the mount, the tool mask, the thinking decision and each resolved model call. |
+| `promptMode` | `web-tone`、`empty`、`custom` | `web-tone` | `web-tone` 用内置中文语气提示；`empty` 完全不发系统提示；`custom` 使用 `customPrompt`。 |
+| `customPrompt` | 字符串 | `""` | `promptMode: custom` 时使用；留空同样等于「无系统提示」。 |
+| `temperature` | `0`–`1.5` 的数字，或 `null` | `1` | 只在非思考请求里发送；`null` 表示永不发送。 |
+| `defaultThinking` | `off`、`follow-ui` | `off` | 对「尚未记录思考档位」的会话首轮关闭思考；`follow-ui` 跟随适配器默认值（当前是开启）。 |
+| `traceFile` | 路径或 `null` | `null` | 可选诊断：分别记录挂载、工具屏蔽、思考档位决策与每次模型调用解析出的配置。 |
 
-### About the defaults
+### 关于默认值
 
-- `defaultThinking: off` applies to the first turn of a chat that has no recorded
-  reasoning level, and only on DeepSeek routes (other providers may reject the
-  `off` effort). A restored or continued session keeps whatever it recorded,
-  and any level you pick in the UI later wins.
-- The plugin observes the reasoning level on every request, so turning thinking
-  on in the UI immediately stops temperature injection for that chat.
-- Temperature has no first-class setting in the current harness API, so the
-  plugin sets it through the `agent/request` waterfall. That hook is marked
-  deprecated upstream ("no replacement API" for per-request controls); if a
-  future DSH release removes it, this option will simply become a no-op instead
-  of breaking chat.
+- `defaultThinking: off` 只作用于还没有记录思考档位的会话首轮，且只在 DeepSeek 路由上（其他 provider 未必接受 `off`）。恢复的、继续的历史会话保留原有记录；你之后在界面里的选择同样优先。
+- 插件每次请求都会读取当前思考档位，所以你在界面里打开思考后，它立刻停止注入 `temperature`。
+- 当前 Harness API 没有一等公民的 `temperature` 设置，插件通过 `agent/request` waterfall 注入。该钩子在上游已标记 deprecated（每次请求的控制项「没有替代 API」）；若未来 DSH 移除它，这个选项会静默失效，但不会中断聊天。
 
-## Request shape
+## 请求体形态
 
-Approximate for the same three-word message, before conversation history:
+同一条消息、会话历史为空时的近似对比：
 
-| Field | Standard mode | Chat mode (`web-tone`) |
+| 字段 | 标准模式 | Chat 模式（`web-tone`） |
 | --- | --- | --- |
-| `system` | several KB of workflow rules + environment snapshot | ~250 characters of tone guidance |
-| `tools` | ~20 schemas | **absent** |
-| `thinking` | `enabled`, effort `high` by default | `disabled` by default |
-| `temperature` | absent (provider default) | `1` |
-| `max_tokens` | the harness' configured cap | the same cap (this plugin does not change it) |
+| `system` | 几 KB 工作流规则 + 环境快照 | 约 70 字语气提示 |
+| `tools` | 约 20–70 个 schema（视安装的插件而定） | **不存在** |
+| `thinking` | 默认 `enabled`、effort `high` | 默认 `disabled` |
+| `temperature` | 不发送（用服务端默认） | `1` |
+| `max_tokens` | Harness 配置的上限 | 同一上限（本插件不修改） |
 
-With `promptMode: "empty"`, the `system` field is absent as well.
+`promptMode: "empty"` 时，`system` 字段同样不存在。
 
-### Verifying it yourself
+### 自己验证
 
-Set `traceFile` to a path outside the repository:
+把 `traceFile` 指向仓库外的路径：
 
 ```json
 { "traceFile": "~/.dsh/chat-mode-trace.jsonl" }
 ```
 
-Each line is a small JSON object: one for the mount (`via: apply`), one for the
-global-tool mask (`via: maskGlobalTools`), one when a first turn decides the
-reasoning level (`via: agent/inbox/claimed`), and one per resolved model call
-(`via: agent/request`) with provider, model, effort, temperature and token cap.
-Message bodies and system-prompt text are deliberately not recorded.
+每条都是小型 JSON：挂载一条（`via: apply`）、全局工具屏蔽一条（`via: maskGlobalTools`）、首轮思考决策一条（`via: agent/inbox/claimed`）、每次模型调用解析结果一条（`via: agent/request`）。**不会**记录消息正文或系统提示原文。
 
-For the request itself, a session log already carries the authoritative pieces:
-`request/header` (model, tools and controls) and `system/message` (the system
-prompt). Together with a trace line they show the complete shape without
-recording any conversation content.
+请求本身可由会话日志核对：`request/header`（模型、工具、控制项）与 `system/message`（系统提示）就是序列化的输入，二者结合一行 trace 即可完整证明请求形态，无需落盘对话内容。
 
-## Compatibility
+## 已知限制
 
-- DSH Desktop / `dsh web`: tested against the current Desktop bundle.
-- DSH Go and other clients built on the same DSH runtime: the preset is served
-  by the harness preset registry, so a client that reads the roster
-  dynamically should list it the same way the Web UI does. This has not been
-  verified on a phone; treat it as "expected to work, pending device test".
-- No native dependencies, no platform checks beyond none, no build step.
+- 其他插件注入的 **user 消息**（例如工作目录 reminder、记忆插件的提示块）不属于本插件的系统提示范围，仍会出现在上下文里；只装本插件时不会出现。
+- 思考模式默认关闭是插件的策略，不是 DSH 的能力限制；想要默认开启就把 `defaultThinking` 改成 `follow-ui`。
+- `empty` 档每次首条消息仍会触发一次会话标题生成小请求（DSH 自带行为，约 64 token 上限），与模式无关。
 
-## Credits
+## 兼容性
 
-- [deepseek-ai/dsh](https://github.com/deepseek-ai/dsh) — the harness this
-  plugin extends, and the source of the preset/bundle conventions used here.
-- [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) — the open
-  web front end whose request habits (a `thinking` type, no explicit
-  temperature) informed the parameter defaults.
+- 需要支持 preset roster 的 DSH 构建：桌面端（Web 界面）可用；`dsh headless` 明确不组合 preset，无法使用。
+- DSH Go（`ccch1mneyyy/dsh-go`）运行的是同一套 DSH 引擎，理论上兼容基于同源 DSH 运行时的客户端（如 DSH Go），**待实机验证**。插件零原生依赖、纯标准 Node ESM，可直接 `adb push` 或从 GitHub 安装测试。
+- 本插件不修改 `node_modules`，也不写 profile 的 `package.json`：安装由 `dsh plugin add` 写进 profile 依赖与 `dsh.profile.bundles`，bundle 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，Loader 启动时插入 `preset-chat` 行。
 
-## License
+## 开发
 
-MIT. See [LICENSE](LICENSE).
+```sh
+pnpm install
+pnpm run typecheck   # tsc --noEmit + checkJs
+pnpm test            # node:test，20 条
+```
+
+修改后重新挂载即可生效：`dsh plugin --profile <name> add /绝对路径/dsh-plugin-chat-mode`。桌面端同一路径重装会提示重启；换一个新目录安装可以让运行中的应用重新加载。
+
+## 致谢
+
+- [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)：插件机制、preset、`tools.restrict`、`agent/request` 钩子都来自这里。
+- [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)：参考了官方 Web 前端的纯对话请求构造与思考模式开关习惯。
+
+## 许可证
+
+[MIT](LICENSE)。
