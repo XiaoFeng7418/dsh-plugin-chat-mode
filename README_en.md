@@ -12,7 +12,7 @@ coding agent.
 
 ## Why
 
-The default presets are built for work. Every request carries dozens of tool
+The default presets are built for work. Every request carries a hundred tool
 schemas plus a multi-kilobyte system prompt with file-editing discipline,
 planning rules and a runtime snapshot of the OS, git state, cwd and file tree.
 That is the right trade-off for agent work, and the wrong one for "explain this
@@ -24,6 +24,31 @@ paragraph to me":
 
 This plugin keeps the same harness, session model and UI, and removes the parts
 a conversation does not need.
+
+## Measured
+
+A fresh session with one message ("say hi in one sentence") on a desktop install
+that has several other plugins loaded:
+
+| Standard: one greeting, 36K tokens | Chat: the same sentence, 1.9K tokens |
+| --- | --- |
+| ![Standard mode, 36K tokens](assets/standard-36k.png) | ![Chat mode, 1.9K tokens](assets/chat-mode-1.9k.png) |
+
+| | Standard | Chat (`web-tone`) | Chat (`empty`) |
+| --- | --- | --- | --- |
+| `tools` field | 103 schemas | **absent** | **absent** |
+| `system` | 14,476 characters | 61 characters (253 for the English tone line) | **empty (field absent)** |
+| thinking | on, effort `high` | off by default | off by default |
+| `temperature` | not sent | **1.0** | **1.0** |
+| input tokens | 35,967 | **1,880** | **1,842** |
+
+About 19x fewer input tokens, and no `"tools": []` either — the whole field is
+omitted. The two screenshots above are that same greeting in both modes
+(36K vs 1.9K).
+
+> The numbers come from one desktop install with a fair number of other plugins
+> (they are the tools being masked, not tools this preset declares). Absolute
+> values vary with the deployment; the ratio and the absent `tools` field do not.
 
 ## What it does
 

@@ -17,6 +17,7 @@
     "cordis.patch.yml",
     "locale",
     "icon.svg",
+    "assets",
     "README.md",
     "README_en.md",
     "LICENSE"
