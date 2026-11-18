@@ -19,9 +19,13 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 
 ### 实测对比（新建会话，只发一句「用一句话打个招呼」）
 
-| Standard 模式：一次问候 36K tokens | Chat（轻量对话）：同一句话 1.9K tokens |
-| --- | --- |
-| ![Standard 模式，用量 36K tokens](assets/standard-36k.png) | ![Chat 模式，用量 1.9K tokens](assets/chat-mode-1.9k.png) |
+**Standard 模式（36K tokens / ¥0.0361）**
+
+![Standard 模式，用量 36K tokens](assets/standard-36k.png)
+
+**Chat 轻量模式（1.9K tokens / ¥0.0021）**
+
+![Chat 模式，用量 1.9K tokens](assets/chat-mode-1.9k.png)
 
 | 指标 | Standard 模式 | Chat（`web-tone`） | Chat（`empty`） |
 | --- | --- | --- | --- |

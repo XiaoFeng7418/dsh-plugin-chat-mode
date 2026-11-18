@@ -30,9 +30,13 @@ a conversation does not need.
 A fresh session with one message ("say hi in one sentence") on a desktop install
 that has several other plugins loaded:
 
-| Standard: one greeting, 36K tokens | Chat: the same sentence, 1.9K tokens |
-| --- | --- |
-| ![Standard mode, 36K tokens](assets/standard-36k.png) | ![Chat mode, 1.9K tokens](assets/chat-mode-1.9k.png) |
+**Standard mode (36K tokens / ¥0.0361)**
+
+![Standard mode, 36K tokens](assets/standard-36k.png)
+
+**Chat mode (1.9K tokens / ¥0.0021)**
+
+![Chat mode, 1.9K tokens](assets/chat-mode-1.9k.png)
 
 | | Standard | Chat (`web-tone`) | Chat (`empty`) |
 | --- | --- | --- | --- |
