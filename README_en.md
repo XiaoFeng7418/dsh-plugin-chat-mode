@@ -91,13 +91,13 @@ dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode
 Install the packaged tarball from a GitHub Release:
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.2/dsh-plugin-chat-mode-0.1.2.tgz
+dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.3/dsh-plugin-chat-mode-0.1.3.tgz
 ```
 
 Pin a commit for reproducibility:
 
 ```sh
-dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.2
+dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.3
 ```
 
 For the Desktop app, open **Plugins → Add plugin** and install the same GitHub
@@ -215,7 +215,8 @@ recording any conversation content.
 ### On DSH Go (Android)
 
 1. In DSH Go open Plugins → `+` in the sidebar, enter
-   `github:<your-user>/dsh-plugin-chat-mode`, the npm package name, or a local
+   `github:XiaoFeng7418/dsh-plugin-chat-mode`, or the download URL of
+   `dsh-plugin-chat-mode-0.1.3.tgz` from the `v0.1.3` release, or a local
    directory path that exists on the phone, install, then tap "enable".
 2. The **native UI only offers DSH Go's own modes** (Work / Companion / Tavern)
    and does not show DSH presets. Tap "switch to web interface" in the sidebar,

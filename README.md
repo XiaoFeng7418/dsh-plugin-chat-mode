@@ -65,13 +65,13 @@ dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode
 固定到某个提交：
 
 ```sh
-dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.2
+dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.3
 ```
 
 从 Release 的 `.tgz` 安装（不经过 GitHub 源码构建）：
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.2/dsh-plugin-chat-mode-0.1.2.tgz
+dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.3/dsh-plugin-chat-mode-0.1.3.tgz
 ```
 
 本地开发调试（目录直接链接进 profile，改完重新挂载即可）：
@@ -152,7 +152,7 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 
 ### 在 DSH Go（安卓）上使用
 
-1. 打开 DSH Go，进入侧栏的「插件 → +」，填入 `github:<你的用户名>/dsh-plugin-chat-mode`、npm 包名，或已推送到手机上的本地目录路径，安装后点「立即启用」。
+1. 打开 DSH Go，进入侧栏的「插件 → +」，填入 `github:XiaoFeng7418/dsh-plugin-chat-mode`，或 `v0.1.3` Release 里 `dsh-plugin-chat-mode-0.1.3.tgz` 的下载链接，或已推送到手机上的本地目录路径，安装后点「立即启用」。
 2. DSH Go 的**原生界面只有内置的「工作 / 伙伴小屋 / 酒馆」模式**，不显示 DSH preset。点侧栏里的「切换到网页界面」，在网页界面的新会话页打开模式选择器，选 **Chat（轻量对话）**。
 3. 效果差异（如实说明）：
    - 桌面端（引擎 `rc.3` 及以上）实测：请求无 `tools` 字段、系统提示词 61 字符，输入约 **1.9K tokens**。
