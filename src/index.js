@@ -136,17 +136,29 @@ export function apply(ctx, config = {}) {
   ctx.on('agent/request', async (payload, next) => {
     const resolved = await next()
     const agent = payload?.agent
-    const temperature = agent === undefined ? null : resolveTemperature(stateFor(agent), options)
+    const state = agent === undefined ? undefined : stateFor(agent)
+    const temperature = state === undefined ? null : resolveTemperature(state, options)
     const effort = agent?.model?.current?.()?.reasoningEffort
-    const accept = shouldSendTemperature(effort, temperature, resolved.temperature)
-    trace?.({
+    // `/temp` is a live, per-session choice. It must win over the value the
+    // harness persisted in the request header after the first request
+    // (`spent`), so it takes a different branch than the row/file default.
+    const locked = state !== undefined && state.temperature !== 'auto'
+    const canSend = effort === 'off' && temperature !== null
+    const traceLine = {
       via: 'agent/request',
       provider: resolved.provider,
       model: resolved.model,
       reasoningEffort: resolved.reasoningEffort ?? null,
-      temperature: accept ? temperature : resolved.temperature ?? null,
       maxTokens: resolved.maxTokens ?? null,
-    })
+    }
+    if (locked) {
+      trace?.({ ...traceLine, temperature: canSend ? temperature : null, locked: true })
+      if (canSend) return { ...resolved, temperature }
+      const { temperature: _dropped, ...rest } = resolved
+      return rest
+    }
+    const accept = shouldSendTemperature(effort, temperature, resolved.temperature)
+    trace?.({ ...traceLine, temperature: accept ? temperature : resolved.temperature ?? null })
     if (!accept) return resolved
     return { ...resolved, temperature }
   })

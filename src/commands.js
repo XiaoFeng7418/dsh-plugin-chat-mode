@@ -114,6 +114,7 @@ export function parseTone(raw) {
  */
 export function parseTemperature(raw, warn) {
   const value = raw.trim().toLowerCase()
+  if (value.length === 0) return { error: `用法：/temp ${TEMPERATURE_MIN}-${TEMPERATURE_MAX} | auto | off` }
   if (value === 'auto') return { temperature: 'auto' }
   if (value === 'off' || value === 'none') return { temperature: 'off' }
   const parsed = Number(value)
@@ -195,15 +196,14 @@ export function registerChatCommands(ctx, deps) {
     state.web = value === 'on'
     trace?.({ via: 'command:web', instance: INSTANCE_ID, sessionId: invocation?.agent?.session?.id ?? null, web: state.web })
     if (!state.web) return '联网已关闭：请求里不再包含任何工具定义。'
-    const providerHint = true
+    const isolated = options.webSearchProvider !== 'inherit'
     return [
-      '联网已开启：本轮起只额外提供 web_search 与 web_fetch 两个工具（约 +0.15K input tokens）。',
-      providerHint
-        ? '若要享受 DeepSeek 自 2026-11-18 起「模型调用触发的搜索/抓取不按次计费、只按 token」的政策，' +
-          '请把 DSH 设置 → Web 搜索与抓取里的 Search Provider 改成 deepseek-official；' +
-          '默认的 deepseek-search-api 仍按次收费（¥5/1k 次）。'
-        : '',
-    ].filter(Boolean).join('\n')
+      '联网已开启：本轮起只额外提供 web_search 与 web_fetch 两个工具（实测约 +455 input tokens）。',
+      isolated
+        ? '搜索通道：预设内隔离的 deepseek-official（模型调用触发的搜索只计 token，不按次收费）。'
+        : '搜索通道：跟随宿主设置。若宿主的 Search Provider 是 deepseek-search-api，搜索会按次收费（¥5/1k 次）；' +
+          '改成 deepseek-official 才享受「只计 token」的政策。',
+    ].join('\n')
   }
 
   const definitions = [

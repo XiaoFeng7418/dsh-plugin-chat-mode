@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { savingsText, parseTemperature, parseTone, statusText } from '../src/commands.js'
+import { registerChatCommands, savingsText, parseTemperature, parseTone, statusText } from '../src/commands.js'
 import { DEFAULTS } from '../src/options.js'
 import { CONCISE_PROMPT, CREATIVE_PROMPT, WEB_TONE_PROMPT } from '../src/prompts.js'
 import { addUsage, savingsOf, usageOf } from '../src/session.js'
@@ -34,6 +34,46 @@ test('parseTemperature handles auto, off, numbers and clamping', () => {
   assert.match(parseTemperature('hot', warn).error ?? '', /温度需要是/u)
 })
 
+test('parseTemperature rejects an empty argument instead of silently using zero', () => {
+  assert.match(parseTemperature('', warn).error ?? '', /用法/u)
+  assert.match(parseTemperature('   ', warn).error ?? '', /用法/u)
+})
+
+test('parseTone trims the custom text and collapses inner whitespace', () => {
+  assert.deepEqual(parseTone('custom  be  exact '), { tone: 'custom', customPrompt: 'be exact' })
+})
+
+test('the /chat command names the isolated search channel in user terms', () => {
+  /** @type {import('../src/session.js').ChatSessionState} */
+  const state = { tone: 'web-tone', customPrompt: '', temperature: 'auto', web: false }
+  /**
+   * @param {import('../src/options.js').ChatOptions} options
+   * @returns {string}
+   */
+  const runChat = (options) => {
+    /** @type {Map<string, any>} */
+    const registered = new Map()
+    const ctx = {
+      commands: {
+        register(definition) {
+          registered.set(definition.name, definition)
+          return () => {}
+        },
+      },
+    }
+    registerChatCommands(ctx, { options, warn, savePath: 'C:/tmp/unused.json', stateOf: () => state })
+    const entry = registered.get('chat')
+    assert.ok(entry !== undefined)
+    return entry.handler({ agent: { session: { id: 'session-channel' } }, rawInput: '' }).text
+  }
+  const isolated = runChat({ ...DEFAULTS, webSearchProvider: 'deepseek-official' })
+  assert.match(isolated, /预设内独立隔离/u)
+  assert.match(isolated, /deepseek-official/u)
+  assert.match(isolated, /免按次费/u)
+  const inherited = runChat({ ...DEFAULTS, webSearchProvider: 'inherit' })
+  assert.match(inherited, /跟随宿主/u)
+})
+
 test('savingsOf compares the accumulated input against the Standard baseline', () => {
   const usage = { calls: 2, input: 3800, output: 40 }
   const stats = savingsOf(usage, 10000)
@@ -41,6 +81,14 @@ test('savingsOf compares the accumulated input against the Standard baseline', (
   assert.equal(stats.standardInput, 20000)
   assert.equal(stats.saved, 16200)
   assert.equal(stats.ratio.toFixed(2), '5.26')
+})
+
+test('savingsOf reports a ratio of zero when the baseline is not lower', () => {
+  const stats = savingsOf({ calls: 1, input: 5000, output: 0 }, 35967)
+  assert.ok(stats.saved > 0)
+  const tiny = savingsOf({ calls: 0, input: 0, output: 0 }, 35967)
+  assert.equal(tiny.saved, 0)
+  assert.equal(tiny.ratio, 0)
 })
 
 test('usage accumulates per session id and starts empty', () => {

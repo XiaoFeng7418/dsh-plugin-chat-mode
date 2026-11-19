@@ -6,7 +6,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-19
+## [0.2.0] - 2026-11-20
 
 ### Added
 
@@ -16,49 +16,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `/chat save`.
 - Two new tone presets: `concise` (answer first, one sentence when one is
   enough) and `creative` (more associations, a little playfulness, paired with
-  the higher `creativeTemperature` when the temperature is still `auto`).
-- Optional `web_search` and `web_fetch` tools, off by default and turned on per
+  the higher `creativeTemperature` while the temperature is still `auto`).
+- Optional `web_search` and `web_fetch` tools, off by default and enabled per
   session with `/web on`. While they are off the request carries no tool
-  schemas (engines from 0.2.2-rc.5 on still emit an empty `"tools": []`, about
-  15 bytes, which the engine's `dsh-llm` layer always passes; plugins cannot
-  remove it). Turning them on adds about **+455 input tokens** as measured on
+  schemas. Turning them on adds about **+455 input tokens** as measured on
   0.2.2-rc.5 (16,230 → 18,050 request bytes).
 - An isolated `web` runtime inside the Chat preset, pinned to
-  `deepseek-official` search and `http` fetch. Model-triggered server search is
-  billed as tokens instead of the per-call Search API, and the user's global Web
-  settings (Standard mode included) are untouched. Set
-  `webSearchProvider: "inherit"` in `~/.dsh/chat-mode.json` to use the global
-  runtime instead.
-- `/chat savings` reports the input tokens this session used against the
-  Standard baseline (35,967 by default) and how many were saved, using usage the
-  plugin already sees. It costs no extra request.
-- `/chat save` persists the current session's tone, temperature and web switch
-  into `$DSH_HOME/chat-mode.json`.
-- GitHub Actions workflow running typecheck and tests, plus README badges.
-
-### Changed
-
-- The tone section now reads the session state per agent, so one preset can
-  serve different tones in different sessions at the same time.
-- `defaultThinking` still applies to the first turn only, but the check now runs
-  from `agent/inbox/claimed` and is skipped on engines that do not dispatch it
-  (DSH Go's 0.2.2-rc.1), instead of replacing the prompt.
+  `deepseek-official` search and `http` fetch, so enabling web tools does not
+  depend on the user's global Search Provider and model-triggered search is
+  billed as tokens instead of per call. `webSearchProvider: "inherit"` in
+  `~/.dsh/chat-mode.json` falls back to the host runtime.
+- `.github/workflows/ci.yml` (typecheck + tests), `CHANGELOG.md` and README
+  badges.
 
 ### Fixed
 
-- Per-turn masking no longer denies the two web tools this plugin registers
-  itself, which previously left `/web on` with zero tool schemas.
-- Session tone/temperature/web state is keyed by session id instead of the
-  agent wrapper, so a command and the prompt renderer always see the same state.
-- Tests now cover per-session tone isolation, the web-tool switch, temperature
-  resolution, usage accounting, `/chat save` and the trace file (31 tests).
+- `/temp` now overrides the temperature the harness pinned in the request
+  header after the first request, and `/temp off` removes it again; an empty
+  `/temp` reports usage instead of silently meaning `0`.
+- The per-session mask no longer denies the preset's own `web_search` /
+  `web_fetch` tools, so `/web on` really reaches the request.
+- Session overrides are keyed by `session.id`, so two windows no longer share
+  a tone or web toggle.
+- On engines without `agent/inbox/claimed` (DSH Go pins `0.2.2-rc.1`) the
+  plugin keeps masking and temperature behaviour through `agent/created` /
+  `agent/pre-step` / `agent/request`.
 
 ### Note
 
 - DSH Go pins its bundled engine to `0.2.2-rc.1` for stability; `0.2.0` uses
-  `pre-step` / `request` paths for its session overrides so the slash commands
-  keep working on that engine as well.
-
+  the `pre-step` / `request` paths for its session overrides so the slash
+  commands keep working on that engine as well.
+- Engines from 0.2.2-rc.5 on still emit an empty `"tools": []` (about 15 bytes,
+  no schema) when the preset has no tools, because the engine's `dsh-llm`
+  layer always passes an array; plugins cannot remove that field.
 ## [0.1.3] - 2026-11-19
 
 ### Added

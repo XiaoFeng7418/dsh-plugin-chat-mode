@@ -2,7 +2,7 @@
 
 # dsh-plugin-chat-mode
 
-[![CI](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml/badge.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/XiaoFeng7418/dsh-plugin-chat-mode)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -116,6 +116,9 @@ from 16,230 to 18,050 bytes, about **+455 input tokens**. Chat ships its own
 isolated `web` runtime pinned to `deepseek-official` (model-token billed server
 search, no per-call Search API fee), so there is nothing to change globally:
 Standard and your other modes keep your own search settings.
+
+Switches apply to the current session only and live in memory: a DSH restart
+falls back to the configured defaults. Run `/chat save` to keep a choice.
 
 ## Install
 

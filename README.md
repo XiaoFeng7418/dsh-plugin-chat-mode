@@ -2,7 +2,7 @@
 
 # dsh-plugin-chat-mode
 
-[![CI](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml/badge.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/XiaoFeng7418/dsh-plugin-chat-mode)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -70,7 +70,7 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 | `/chat savings` | 按本会话累计 usage 对照 Standard 基线（35,967 input tokens）估算省下的输入 token |
 | `/chat save` | 把当前会话的风格、温度、联网开关写入 `~/.dsh/chat-mode.json`，之后所有新会话沿用 |
 
-切换只影响当前会话；DSH Go 的网页界面同样识别这些命令。
+切换只影响当前会话；DSH Go 的网页界面同样识别这些命令。会话内的切换保存在内存里，DSH 重启后会回到配置文件的默认值；想长期保留就执行 `/chat save`。
 
 `/web on` 后请求会多带 `web_search`、`web_fetch` 两个工具 schema，实测请求体从 16,230 字节增至 18,050 字节，约 **+455 input tokens**。Chat 模式自带一个隔离的 `web` 运行时并固定为 `deepseek-official`（模型调用触发的搜索只计 token，不走按次的 Search API），因此**不需要也不应该**去改全局设置：Standard 与其他模式沿用你自己的搜索配置。
 

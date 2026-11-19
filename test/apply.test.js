@@ -10,7 +10,7 @@ import { CONCISE_PROMPT, CREATIVE_PROMPT, WEB_TONE_PROMPT } from '../src/prompts
  * Build a fake preset context that records what the plugin registers.
  *
  * @param {Record<string, unknown>} [config]
- * @param {{ traceFile?: string, presetNames?: string[], rejectPresetBatch?: boolean }} [extra]
+ * @param {{ traceFile?: string, presetNames?: string[], rejectPresetBatch?: boolean, presetDefinitionsThrows?: boolean }} [extra]
  */
 function harness(config = {}, extra = {}) {
   /** @type {Array<any>} */
@@ -53,7 +53,10 @@ function harness(config = {}, extra = {}) {
       },
     },
     tools: {
-      definitions: () => presetNames.map((name) => ({ name })),
+      definitions: () => {
+        if (extra.presetDefinitionsThrows === true) throw new Error('tools service not ready')
+        return presetNames.map((name) => ({ name }))
+      },
       restrict: (filter) => {
         if (extra.rejectPresetBatch === true && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
         presetRestrictions.push(filter)
@@ -90,9 +93,9 @@ function harness(config = {}, extra = {}) {
 let agentCounter = 0
 
 /**
- * @param {{ provider?: string, model?: string, reasoningEffort?: string, names?: string[], rejectBatch?: boolean, sessionId?: string }} [options]
+ * @param {{ provider?: string, model?: string, reasoningEffort?: string, names?: string[], rejectBatch?: boolean, sessionId?: string, definitionsThrows?: boolean }} [options]
  */
-function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, sessionId = `session-test-${++agentCounter}` } = {}) {
+function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, sessionId = `session-test-${++agentCounter}`, definitionsThrows = false } = {}) {
   const selections = []
   /** @type {Array<{ deny?: readonly string[], allow?: readonly string[] }>} */
   const restrictions = []
@@ -106,7 +109,10 @@ function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', re
     },
     ctx: {
       tools: {
-        definitions: () => names.map((name) => ({ name })),
+        definitions: () => {
+          if (definitionsThrows) throw new Error('tools service not ready')
+          return names.map((name) => ({ name }))
+        },
         restrict: (filter) => {
           if (rejectBatch && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
           restrictions.push(filter)
@@ -260,6 +266,24 @@ test('temperature follows /temp and the creative default', async () => {
   assert.equal((await request({ agent: thinking.agent }, next)).temperature, undefined)
 })
 
+test('/temp overrides a temperature already pinned in the request header', async () => {
+  const h = harness({ temperature: 1 })
+  const request = h.listeners.get('agent/request')
+  // After the first request the harness keeps `temperature` in the persisted
+  // request header, so a stale value comes back on every later request.
+  const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100, temperature: 1 })
+  const agent = fakeAgent({ reasoningEffort: 'off' })
+
+  assert.equal((await request({ agent: agent.agent }, next)).temperature, 1, 'the row default respects the pinned value')
+
+  h.run('temp', agent.agent, '0.3')
+  assert.equal((await request({ agent: agent.agent }, next)).temperature, 0.3, 'an explicit /temp wins')
+
+  h.run('temp', agent.agent, 'off')
+  const off = await request({ agent: agent.agent }, next)
+  assert.equal('temperature' in off, false, '/temp off drops the pinned value')
+})
+
 test('commands return the success result shape the gateway accepts', () => {
   const h = harness()
   const agent = fakeAgent().agent
@@ -329,4 +353,41 @@ test('a trace file records the mount mask, the usage and the request', async () 
   assert.equal(lines.find((line) => line.via === 'llm/usage')?.input, 7)
   const requestLine = lines.find((line) => line.via === 'agent/request')
   assert.equal(requestLine?.temperature, 1)
+})
+
+test('a 0.2.2-rc.1 engine without claimed events still masks tools and sends temperature', async () => {
+  // rc.1 never dispatches `agent/inbox/claimed`; the plugin must keep working
+  // through `agent/created` / `agent/pre-step` / `agent/request` alone.
+  const h = harness()
+  const created = fakeAgent({ names: ['late-tool'] })
+  h.listeners.get('agent/created')({ agent: created.agent, source: 'startup' })
+  assert.deepEqual(created.restrictions, [{ deny: ['late-tool'] }])
+
+  const stepped = fakeAgent({ names: ['late-tool', 'web_search'], reasoningEffort: 'off' })
+  const decision = { kind: 'enter', messages: [] }
+  const passed = await h.listeners.get('agent/pre-step')({ agent: stepped.agent }, () => Promise.resolve(decision))
+  assert.equal(passed, decision)
+  assert.deepEqual(stepped.restrictions, [{ deny: ['late-tool'] }])
+
+  const request = h.listeners.get('agent/request')
+  const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100 })
+  assert.equal((await request({ agent: stepped.agent }, next)).temperature, 1)
+})
+
+test('a tools service that throws while masking does not break the preset', () => {
+  const h = harness({}, { presetDefinitionsThrows: true })
+  const agent = fakeAgent({ definitionsThrows: true })
+  assert.doesNotThrow(() => h.listeners.get('agent/created')({ agent: agent.agent, source: 'startup' }))
+  assert.deepEqual(agent.restrictions, [])
+  assert.doesNotThrow(() => h.listeners.get('agent/pre-step')({ agent: agent.agent }, () => undefined))
+})
+
+test('/web on only exposes the two tools to the session that enabled it', () => {
+  const h = harness()
+  const enabled = fakeAgent().agent
+  const other = fakeAgent().agent
+  const when = h.registeredTools[0].options.when
+  h.run('web', enabled, 'on')
+  assert.equal(when({ agent: enabled }), true)
+  assert.equal(when({ agent: other }), false)
 })

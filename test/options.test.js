@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -17,6 +17,7 @@ import {
   dshHome,
   loadOptions,
   readConfigFile,
+  saveConfigFile,
   shouldSendTemperature,
 } from '../src/options.js'
 import { WEB_TONE_PROMPT, promptFor } from '../src/prompts.js'
@@ -113,4 +114,69 @@ test('the shipped tone prompt stays short enough to be cheaper than one tool sch
   assert.ok(!WEB_TONE_PROMPT.includes('\n'), 'tone prompt stays on one line')
   assert.match(WEB_TONE_PROMPT, /用用户提问的语言回答/, 'tone prompt follows the user language')
   assert.match(WEB_TONE_PROMPT, /客服腔/, 'tone prompt rules out canned service phrasing')
+})
+
+test('web search provider defaults to the isolated official channel', () => {
+  withHome((home, env) => {
+    const options = loadOptions(undefined, { env })
+    assert.equal(options.webSearchProvider, 'deepseek-official')
+    assert.equal(DEFAULTS.webSearchProvider, 'deepseek-official')
+    const inherited = loadOptions({ webSearchProvider: 'inherit' }, { env })
+    assert.equal(inherited.webSearchProvider, 'inherit')
+  })
+})
+
+test('an unknown web search provider is rejected with a warning', () => {
+  withHome((home, env) => {
+    const warnings = []
+    const options = loadOptions({ webSearchProvider: 'deepseek-search-api' }, { env, warn: m => warnings.push(m) })
+    assert.equal(options.webSearchProvider, 'deepseek-official')
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0], /webSearchProvider/)
+  })
+})
+
+test('saveConfigFile merges the patch and keeps unrelated keys', () => {
+  withHome((home, env) => {
+    const file = configFilePath(env)
+    writeFileSync(file, JSON.stringify({ promptMode: 'empty', keepMe: 42 }))
+    const warnings = []
+    assert.equal(saveConfigFile(file, { temperature: null, webSearch: true }, m => warnings.push(m)), true)
+    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    assert.equal(saved.promptMode, 'empty')
+    assert.equal(saved.keepMe, 42)
+    assert.equal(saved.temperature, null)
+    assert.equal(saved.webSearch, true)
+    assert.deepEqual(warnings, [])
+  })
+})
+
+test('saveConfigFile replaces a corrupt file instead of failing', () => {
+  withHome((home, env) => {
+    const file = configFilePath(env)
+    writeFileSync(file, '{ broken')
+    const warnings = []
+    assert.equal(saveConfigFile(file, { promptMode: 'concise' }, m => warnings.push(m)), true)
+    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    assert.equal(saved.promptMode, 'concise')
+    assert.match(warnings[0], /not valid JSON/)
+  })
+})
+
+test('a non-object override file is ignored, not fatal', () => {
+  withHome((home, env) => {
+    const file = configFilePath(env)
+    writeFileSync(file, '[1, 2, 3]')
+    const warnings = []
+    const options = loadOptions(undefined, { env, warn: m => warnings.push(m) })
+    assert.equal(options.promptMode, 'web-tone')
+    assert.match(warnings[0], /expected a JSON object/)
+  })
+})
+
+test('webSearch defaults to off so the request carries no tool schemas', () => {
+  withHome((home, env) => {
+    assert.equal(loadOptions(undefined, { env }).webSearch, false)
+    assert.equal(loadOptions({ webSearch: true }, { env }).webSearch, true)
+  })
 })
