@@ -4,27 +4,31 @@
  * The preset row in `cordis.patch.yml` decides what the agent *has*: no tool
  * rows and no workflow rows. This plugin decides what the request *looks like*:
  *
- * 1. one complete system-prompt section (so nothing inherited leaks in) and no
- *    runtime context (no OS, git or file-tree snapshot);
+ * 1. one complete system-prompt section (so nothing inherited leaks in), whose
+ *    text follows the session's tone; runtime context stays suppressed;
  * 2. no tools at all — inherited global tools from other plugins are restricted
- *    away for this agent, because a preset cannot unregister them;
- * 3. a default reasoning effort of `off` for a fresh chat, when the user has
- *    not already chosen a level and the route is a DeepSeek one;
- * 4. a temperature for non-thinking turns only — thinking requests keep the
- *    provider default because the provider rejects a conflicting temperature.
+ *    away for this agent, because a preset cannot unregister them. The two web
+ *    tools are registered here and only appear after `/web on`;
+ * 3. a temperature for non-thinking turns only — thinking requests keep the
+ *    provider default because the provider rejects a conflicting temperature;
+ * 4. local slash commands (`/chat`, `/tone`, `/temp`, `/web`) that cost zero
+ *    tokens, plus per-session usage accumulation for `/chat savings`.
  *
  * @module dsh-plugin-chat-mode
  */
 
 import { appendFileSync } from 'node:fs'
-import { isDeepSeekProvider, loadOptions, shouldSendTemperature } from './options.js'
-import { promptFor } from './prompts.js'
+import { configFilePath, isDeepSeekProvider, loadOptions, shouldSendTemperature } from './options.js'
+import { promptForTone } from './prompts.js'
+import { addUsage, resolveTemperature, stateOf } from './session.js'
+import { registerChatCommands } from './commands.js'
+import { webToolDefinitions } from './webtools.js'
 
 /** Cordis plugin name. */
 export const name = 'chat-mode'
 
-/** Wait for the prompt and tool registries before registering anything. */
-export const inject = ['systemPrompt', 'tools']
+/** Wait for every service this plugin touches before registering anything. */
+export const inject = ['systemPrompt', 'tools', 'commands', 'web']
 
 /** Unique section name; duplicates inside one scope are rejected by the host. */
 const SECTION_NAME = 'chat-mode:prompt'
@@ -44,28 +48,53 @@ export function apply(ctx, config = {}) {
   const options = loadOptions(config, { warn })
   const traceFile = options.traceFile
   const trace = traceFile === null ? undefined : (/** @type {Record<string, unknown>} */ line) => writeTrace(traceFile, line, warn)
-  trace?.({ via: 'apply', promptMode: options.promptMode, temperature: options.temperature, defaultThinking: options.defaultThinking })
+  const stateFor = (/** @type {any} */ agent) => stateOf(agent, options)
+  trace?.({
+    via: 'apply',
+    promptMode: options.promptMode,
+    temperature: options.temperature,
+    defaultThinking: options.defaultThinking,
+    webSearch: options.webSearch,
+  })
 
   // A complete section becomes the only section in the assembly, which drops
-  // the harness identity and every engineering/workflow prompt. The runtime
-  // context suppressor additionally removes dynamic facts such as the OS,
-  // git state, cwd and the file tree.
+  // the harness identity and every engineering/workflow prompt. Its text is a
+  // function of the *calling agent*, so /tone changes one session only, and the
+  // runtime-context suppressor removes OS, git, cwd and file-tree facts.
   ctx.effect(() => ctx.systemPrompt.section({
     name: SECTION_NAME,
     order: 0,
-    text: promptFor(options),
+    text: (/** @type {any} */ context) => promptForTone(stateFor(context?.agent)),
     complete: true,
   }), 'chat-mode.prompt')
   ctx.effect(() => ctx.systemPrompt.suppressRuntimeContext(), 'chat-mode.runtime-context')
 
   // A preset cannot unregister another plugin's global tools, so they are
   // masked for this preset's whole scope first, and again on every later step
-  // for tools that a plugin registers after the preset mounted. This runs
-  // before any agent of this preset resolves its tool set.
+  // for tools that a plugin registers after the preset mounted.
   maskGlobalTools(ctx, warn, trace)
 
+  // The two web tools are scoped registrations, so the global mask above does
+  // not touch them. `when` hides them from declarations *and* dispatch unless
+  // the session turned web access on, which keeps the default request free of
+  // any `tools` field.
+  try {
+    for (const definition of webToolDefinitions(ctx.web, {})) {
+      ctx.tools.register(definition, { when: ({ agent }) => stateFor(agent).web })
+    }
+  } catch (error) {
+    warn(`could not register web tools: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  registerChatCommands(ctx, {
+    options,
+    warn,
+    trace,
+    savePath: configFilePath(),
+    stateOf: stateFor,
+  })
+
   ctx.on('agent/created', (payload) => {
-    trace?.({ via: 'agent/created:enter', source: payload?.source ?? null, hasAgent: payload?.agent !== undefined })
     stripTools(payload?.agent, warn, trace)
   })
 
@@ -78,11 +107,10 @@ export function apply(ctx, config = {}) {
     return next()
   })
 
-  // The claimed event runs inside `inbox.claim()`, before the step captures
-  // its model selection and before it resolves its tool set, so both the
-  // thinking default and the tool mask reach the very first request. Masking
-  // here as well matters on runtimes where other plugins register their tools
-  // after the preset mounted: the preset-scope mask cannot know their names.
+  // `agent/inbox/claimed` runs inside `inbox.claim()` before the step captures
+  // its model selection, so the thinking default reaches the very first request
+  // on runtimes that dispatch it (0.2.2-rc.3). On 0.2.2-rc.1 the event is not
+  // dispatched; the pre-step fallback below then covers later turns instead.
   ctx.on('agent/inbox/claimed', (payload) => {
     stripTools(payload?.agent, warn, trace)
     if (options.defaultThinking === 'off') defaultToNonThinking(payload?.agent, payload?.turn, warn, trace)
@@ -90,8 +118,9 @@ export function apply(ctx, config = {}) {
 
   ctx.on('agent/request', async (payload, next) => {
     const resolved = await next()
-    const temperature = options.temperature
-    const effort = payload?.agent?.model?.current?.()?.reasoningEffort
+    const agent = payload?.agent
+    const temperature = agent === undefined ? null : resolveTemperature(stateFor(agent), options)
+    const effort = agent?.model?.current?.()?.reasoningEffort
     const accept = shouldSendTemperature(effort, temperature, resolved.temperature)
     trace?.({
       via: 'agent/request',
@@ -103,6 +132,23 @@ export function apply(ctx, config = {}) {
     })
     if (!accept) return resolved
     return { ...resolved, temperature }
+  })
+
+  // Provider-reported usage per session powers `/chat savings`. The waterfall
+  // wants a synchronous handler that returns the stream, so the wrapper is an
+  // async generator, not an `async` function.
+  ctx.on('llm/stream', (payload, next) => {
+    const stream = next()
+    const sessionId = payload?.sessionId
+    return (async function* () {
+      for await (const chunk of stream) {
+        if (chunk?.type === 'usage' && chunk.usage !== undefined) {
+          addUsage(sessionId, chunk.usage)
+          trace?.({ via: 'llm/usage', input: chunk.usage.inputTokens ?? 0, output: chunk.usage.outputTokens ?? 0 })
+        }
+        yield chunk
+      }
+    })()
   })
 }
 
@@ -139,7 +185,7 @@ function defaultToNonThinking(agent, turn, warn, trace) {
  * A preset cannot unregister another plugin's rows, and those tools are
  * registered globally, so the preset's own scope is where they can be hidden:
  * every agent under it inherits the restriction, and the first request is
- * already covered (the per-agent hooks would run too late for step one).
+ * already covered.
  *
  * @param {any} ctx Preset-scoped Cordis context.
  * @param {(message: string) => void} warn
@@ -181,6 +227,7 @@ function maskGlobalTools(ctx, warn, trace) {
  *
  * @param {any} agent Agent created under this preset.
  * @param {(message: string) => void} warn
+ * @param {((line: Record<string, unknown>) => void) | undefined} trace
  */
 function stripTools(agent, warn, trace) {
   try {

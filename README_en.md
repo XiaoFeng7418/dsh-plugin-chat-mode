@@ -2,6 +2,10 @@
 
 # dsh-plugin-chat-mode
 
+[![CI](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml/badge.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/XiaoFeng7418/dsh-plugin-chat-mode)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A minimal, **tool-free chat preset** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 It adds a `chat` mode to the mode switcher: no tool schemas, no engineering
@@ -69,6 +73,13 @@ omitted. The two screenshots above are that same greeting in both modes
 - **Web-like tone.** The default `web-tone` prompt is an original prompt under
   80 tokens: natural, warm, willing to disagree, honest about uncertainty, no
   canned service phrases. `empty` removes the system prompt entirely.
+- **Local slash commands.** `/tone`, `/temp`, `/web`, `/chat savings` and
+  `/chat save` run locally: no tokens, no model round trip, no effect on other
+  sessions. `concise` answers first and uses one sentence when one is enough;
+  `creative` brings more associations and a higher 1.25–1.3 temperature.
+  `/web on` is the only way to add the `web_search` and `web_fetch` schemas;
+  every other tool stays masked. `/chat savings` estimates the input tokens this
+  session saved against the Standard baseline.
 - **Chat-friendly sampling.** Non-thinking requests default to `temperature: 1`
   (configurable 0–1.5), instead of the flat `0` that coding modes like.
 - **Thinking stays available.** Pick a thinking level in the UI as usual; the
@@ -79,6 +90,26 @@ omitted. The two screenshots above are that same greeting in both modes
   pressure; ordinary turns get no extra system text.
 - **No default preset is modified.** The plugin inserts new loader/preset ids
   (`preset-chat` / `chat`); Standard, PTC, Minimal, Creative and any other presets you have installed are untouched.
+
+### Slash commands
+
+Type them in the composer. Everything happens locally: no tokens, no extra
+request, and no effect on other sessions.
+
+| Command | Effect |
+| --- | --- |
+| `/chat` | Show this session's tone, temperature, web switch and usage |
+| `/chat help` | List every command |
+| `/tone web\|empty\|concise\|creative` | Switch this session's tone |
+| `/tone custom <text>` | Use a short custom system prompt for this session |
+| `/temp auto\|off\|0-1.5` | `auto` follows the tone default (creative uses 1.28), `off` sends no temperature, a number pins it |
+| `/web on\|off` | Allow `web_search` / `web_fetch`; off is the default and the request body has no `tools` field |
+| `/chat savings` | Estimate the input tokens this session saved against the Standard baseline (35,967) |
+| `/chat save` | Persist tone, temperature and the web switch into `~/.dsh/chat-mode.json` |
+
+`/web on` adds about 570 characters of tool schemas (roughly +140–160 input
+tokens). To make web search bill by tokens instead of the standalone ¥5/1k
+Search API, switch the DSH Search Provider to `deepseek-official`.
 
 ## Install
 
@@ -150,8 +181,11 @@ ignored rather than breaking the preset.
 
 | Option | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `promptMode` | `web-tone`, `empty`, `custom` | `web-tone` | `empty` sends no system prompt at all; `custom` uses `customPrompt`. |
+| `promptMode` | `web-tone`, `empty`, `concise`, `creative`, `custom` | `web-tone` | `empty` sends no system prompt at all; `concise` answers first; `creative` brainstorms and polishes; `custom` uses `customPrompt`. |
 | `customPrompt` | string | `""` | Used when `promptMode` is `custom`. An empty value also means "no system prompt". |
+| `creativeTemperature` | number in `0`–`1.5` | `1.28` | Used by the `creative` tone while the temperature is still `auto`. |
+| `webSearch` | `true`, `false` | `false` | Allow the web tools by default; `true` equals `/web on` for new sessions. |
+| `savingsBaseline` | integer | `35967` | Standard input-token baseline used by `/chat savings`. |
 | `temperature` | number `0`–`1.5`, or `null` | `1` | Sent only on non-thinking requests. `null` never sends one. |
 | `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts the first turn of a new chat without thinking unless a level is already recorded; `follow-ui` keeps the adapter default. |
 | `traceFile` | path or `null` | `null` | Opt-in diagnostic: append JSON lines for the mount, the tool mask, the thinking decision and each resolved model call. |

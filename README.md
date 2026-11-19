@@ -2,6 +2,10 @@
 
 # dsh-plugin-chat-mode
 
+[![CI](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml/badge.svg)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/XiaoFeng7418/dsh-plugin-chat-mode)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）添加一个**极简、零工具、超省 Token** 的 `Chat` 模式。
 保留同一个 Harness、同一套会话和界面，只去掉日常聊天用不到的东西，让语气和用量都接近 DeepSeek 网页版。
 
@@ -45,10 +49,30 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 - **无工作流提示词**：用一个 `complete` 系统提示段整体替换系统提示组装结果，Harness 身份和全部工程规范段落一并消失。
 - **不注入环境**：屏蔽运行时上下文，不再附加 OS、Git、cwd、文件树快照。
 - **接近网页端的语气**：默认 `web-tone` 是原创中文短提示词（61 字，约 50 tokens），自然真诚、有主见、不讨好；用户换语言提问时自动跟随该语言。`empty` 档彻底不要系统提示词。
+- **本地斜杠命令**：`/tone`、`/temp`、`/web`、`/chat savings`、`/chat save` 全部在本地执行，0 token、不经过模型，也不影响其他会话。`concise` 先给结论、能一句不说三句；`creative` 多联想、并配 1.25–1.3 的更高温度。`/web on` 是唯一会额外发送 `web_search`、`web_fetch` 两个 schema 的方式，其余工具始终锁死。`/chat savings` 用本会话已产生的 usage 估算相对 Standard 省下的输入 token。
 - **对话向采样参数**：非思考请求默认 `temperature: 1`（可配 0–1.5）。
 - **保留思考模式**：照常在界面里选档位；思考开启时插件不再发送 `temperature`。
 - **长对话仍可压缩**：内置标准压缩后端，只在上下文接近上限时触发；普通轮次不会往系统提示里加东西。
 - **不改动任何默认预设**：新增 Loader/Preset id（`preset-chat` / `chat`），标准（Standard）、PTC、极简（Minimal）、创造（Creative）以及你已安装的其他自定义模式都不受影响。
+
+### 斜杠命令
+
+在聊天框里输入即可，全部在本地处理，不产生任何 token 消耗，也不会新建请求：
+
+| 命令 | 作用 |
+| --- | --- |
+| `/chat` | 查看当前会话的风格、温度、联网开关与累计用量 |
+| `/chat help` | 列出全部命令 |
+| `/tone web\|empty\|concise\|creative` | 切换本会话风格：`web` 自然口语、`empty` 无系统提示、`concise` 极简直答、`creative` 脑暴润色 |
+| `/tone custom <文案>` | 使用自定义短提示词（仅本会话） |
+| `/temp auto\|off\|0-1.5` | `auto` 跟随风格默认值（creative 为 1.28）、`off` 不发送 temperature、数字则锁定该值 |
+| `/web on\|off` | 是否放行 `web_search` / `web_fetch`；默认 off，请求体里没有 `tools` 字段 |
+| `/chat savings` | 按本会话累计 usage 对照 Standard 基线（35,967 input tokens）估算省下的输入 token |
+| `/chat save` | 把当前会话的风格、温度、联网开关写入 `~/.dsh/chat-mode.json`，之后所有新会话沿用 |
+
+切换只影响当前会话；DSH Go 的网页界面同样识别这些命令。
+
+`/web on` 会在请求里多带约 570 字符的两个工具 schema（约 +140–160 input tokens）；如果想让联网搜索走「按 token 计费」而不是独立的 ¥5/1k Search API，请把 DSH 的 Search Provider 改成 `deepseek-official`。
 
 ## 安装
 
@@ -100,9 +124,12 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 
 | 选项 | 取值 | 默认 | 作用 |
 | --- | --- | --- | --- |
-| `promptMode` | `web-tone`、`empty`、`custom` | `web-tone` | `web-tone` 用内置中文语气提示；`empty` 完全不发系统提示；`custom` 使用 `customPrompt`。 |
+| `promptMode` | `web-tone`、`empty`、`concise`、`creative`、`custom` | `web-tone` | `web-tone` 自然口语；`empty` 完全不发系统提示；`concise` 极简直答；`creative` 脑暴润色；`custom` 使用 `customPrompt`。 |
 | `customPrompt` | 字符串 | `""` | `promptMode: custom` 时使用；留空同样等于「无系统提示」。 |
 | `temperature` | `0`–`1.5` 的数字，或 `null` | `1` | 只在非思考请求里发送；`null` 表示永不发送。 |
+| `creativeTemperature` | `0`–`1.5` 的数字 | `1.28` | `creative` 风格且温度仍是 `auto` 时使用。 |
+| `webSearch` | `true`、`false` | `false` | 默认不放行联网工具；`true` 等价于新会话默认 `/web on`。 |
+| `savingsBaseline` | 整数 | `35967` | `/chat savings` 用来对照的 Standard 输入 token 基线。 |
 | `defaultThinking` | `off`、`follow-ui` | `off` | 对「尚未记录思考档位」的会话首轮关闭思考；`follow-ui` 跟随适配器默认值（当前是开启）。 |
 | `traceFile` | 路径或 `null` | `null` | 可选诊断：分别记录挂载、工具屏蔽、思考档位决策与每次模型调用解析出的配置。 |
 

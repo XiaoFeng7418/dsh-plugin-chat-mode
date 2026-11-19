@@ -10,23 +10,26 @@
  * @module dsh-plugin-chat-mode/options
  */
 
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 /**
  * Fully resolved plugin options.
  *
  * @typedef {object} ChatOptions
- * @property {'web-tone' | 'empty' | 'custom'} promptMode
+ * @property {'web-tone' | 'empty' | 'concise' | 'creative' | 'custom'} promptMode
  * @property {string} customPrompt
  * @property {number | null} temperature
  * @property {'off' | 'follow-ui'} defaultThinking
+ * @property {boolean} webSearch
+ * @property {number} creativeTemperature
+ * @property {number} savingsBaseline
  * @property {string | null} traceFile
  */
 
 /** Accepted `promptMode` values. */
-export const PROMPT_MODES = Object.freeze(['web-tone', 'empty', 'custom'])
+export const PROMPT_MODES = Object.freeze(['web-tone', 'empty', 'concise', 'creative', 'custom'])
 
 /** Accepted `defaultThinking` values. */
 export const THINKING_MODES = Object.freeze(['off', 'follow-ui'])
@@ -36,6 +39,9 @@ export const TEMPERATURE_MIN = 0
 
 /** Highest accepted temperature. */
 export const TEMPERATURE_MAX = 1.5
+
+/** DeepSeek web-app-ish baseline input tokens for one Standard-mode message. */
+export const DEFAULT_SAVINGS_BASELINE = 35967
 
 /**
  * Built-in defaults; every field is user-tunable.
@@ -57,6 +63,16 @@ export const DEFAULTS = Object.freeze({
    * level; `follow-ui` leaves the adapter default (thinking on) alone.
    */
   defaultThinking: 'off',
+  /**
+   * When true, the chat exposes exactly two web tools (`web_search`,
+   * `web_fetch`) in addition to the usual zero tools. Off by default so the
+   * request carries no `tools` field at all.
+   */
+  webSearch: false,
+  /** Temperature paired with the `creative` tone when /temp is still `auto`. */
+  creativeTemperature: 1.28,
+  /** Standard-mode input tokens used by `/chat savings` as the comparison line. */
+  savingsBaseline: DEFAULT_SAVINGS_BASELINE,
   /** Optional JSONL file that records the shape of sent chat requests. */
   traceFile: null,
 })
@@ -115,6 +131,28 @@ export function readConfigFile(file, warn) {
 }
 
 /**
+ * Write the given partial options into the user override file, preserving any
+ * keys the plugin does not manage.
+ *
+ * @param {string} file
+ * @param {Partial<ChatOptions>} patch
+ * @param {(message: string) => void} warn
+ * @returns {boolean} Whether the file was written.
+ */
+export function saveConfigFile(file, patch, warn) {
+  try {
+    const existing = readConfigFile(file, warn)
+    const merged = { ...existing, ...patch }
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `${JSON.stringify(merged, null, 2)}\n`, 'utf8')
+    return true
+  } catch (error) {
+    warn(`could not write ${file}: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
+}
+
+/**
  * Keep valid fields from one layer and warn about rejected ones.
  *
  * @param {Record<string, unknown>} source
@@ -129,7 +167,7 @@ function pick(source, warn, label) {
   for (const key of Object.keys(source)) {
     if (!known.has(key)) warn(`${label}: unknown option "${key}" ignored`)
   }
-  const { promptMode, customPrompt, temperature, defaultThinking, traceFile } = source
+  const { promptMode, customPrompt, temperature, defaultThinking, webSearch, creativeTemperature, savingsBaseline, traceFile } = source
 
   if (promptMode !== undefined) {
     if (typeof promptMode === 'string' && PROMPT_MODES.includes(promptMode)) {
@@ -152,12 +190,40 @@ function pick(source, warn, label) {
       picked.defaultThinking = /** @type {ChatOptions['defaultThinking']} */ (defaultThinking)
     } else warn(`${label}: defaultThinking must be one of ${THINKING_MODES.join(', ')}`)
   }
+  if (webSearch !== undefined) {
+    if (typeof webSearch === 'boolean') picked.webSearch = webSearch
+    else warn(`${label}: webSearch must be true or false`)
+  }
+  if (creativeTemperature !== undefined) {
+    if (typeof creativeTemperature === 'number' && Number.isFinite(creativeTemperature)) {
+      picked.creativeTemperature = clampTemperature(creativeTemperature, warn, `${label}: creativeTemperature`)
+    } else warn(`${label}: creativeTemperature must be a number`)
+  }
+  if (savingsBaseline !== undefined) {
+    if (typeof savingsBaseline === 'number' && Number.isFinite(savingsBaseline) && savingsBaseline > 0) {
+      picked.savingsBaseline = savingsBaseline
+    } else warn(`${label}: savingsBaseline must be a positive number`)
+  }
   if (traceFile !== undefined) {
     if (traceFile === null) picked.traceFile = null
     else if (typeof traceFile === 'string' && traceFile.trim().length > 0) picked.traceFile = traceFile
     else warn(`${label}: traceFile must be null or a non-empty path`)
   }
   return picked
+}
+
+/**
+ * Clamp a temperature into the accepted range and report the adjustment.
+ *
+ * @param {number} value
+ * @param {(message: string) => void} warn
+ * @param {string} label
+ * @returns {number}
+ */
+export function clampTemperature(value, warn, label) {
+  const clamped = Math.min(TEMPERATURE_MAX, Math.max(TEMPERATURE_MIN, value))
+  if (clamped !== value) warn(`${label}: ${value} clamped to ${clamped}`)
+  return clamped
 }
 
 /**
@@ -182,7 +248,7 @@ export function loadOptions(config, options = {}) {
  * Decide whether this request may carry the configured temperature.
  *
  * The DeepSeek adapter maps a reasoning effort of `off` to `thinking: disabled`
- * and every other effort to `thinking: enabled`; an missing effort means the
+ * and every other effort to `thinking: enabled`; a missing effort means the
  * adapter default (thinking on). Temperature is only meaningful while thinking
  * is disabled, so an enabled/unknown thinking state must not receive one.
  *
