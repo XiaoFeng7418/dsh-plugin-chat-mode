@@ -22,6 +22,7 @@ import { dirname, join, resolve } from 'node:path'
  * @property {string} customPrompt
  * @property {number | null} temperature
  * @property {'off' | 'follow-ui'} defaultThinking
+ * @property {'deepseek-official' | 'inherit'} webSearchProvider
  * @property {boolean} webSearch
  * @property {number} creativeTemperature
  * @property {number} savingsBaseline
@@ -63,6 +64,7 @@ export const DEFAULTS = Object.freeze({
    * level; `follow-ui` leaves the adapter default (thinking on) alone.
    */
   defaultThinking: 'off',
+  webSearchProvider: 'deepseek-official',
   /**
    * When true, the chat exposes exactly two web tools (`web_search`,
    * `web_fetch`) in addition to the usual zero tools. Off by default so the
@@ -167,7 +169,7 @@ function pick(source, warn, label) {
   for (const key of Object.keys(source)) {
     if (!known.has(key)) warn(`${label}: unknown option "${key}" ignored`)
   }
-  const { promptMode, customPrompt, temperature, defaultThinking, webSearch, creativeTemperature, savingsBaseline, traceFile } = source
+  const { promptMode, customPrompt, temperature, defaultThinking, webSearch, webSearchProvider, creativeTemperature, savingsBaseline, traceFile } = source
 
   if (promptMode !== undefined) {
     if (typeof promptMode === 'string' && PROMPT_MODES.includes(promptMode)) {
@@ -194,7 +196,13 @@ function pick(source, warn, label) {
     if (typeof webSearch === 'boolean') picked.webSearch = webSearch
     else warn(`${label}: webSearch must be true or false`)
   }
-  if (creativeTemperature !== undefined) {
+  if (webSearchProvider !== undefined) {
+    if (webSearchProvider === 'deepseek-official' || webSearchProvider === 'inherit') {
+      picked.webSearchProvider = webSearchProvider
+    } else {
+      warn(`${label}: webSearchProvider must be "deepseek-official" or "inherit"`)
+    }
+  }  if (creativeTemperature !== undefined) {
     if (typeof creativeTemperature === 'number' && Number.isFinite(creativeTemperature)) {
       picked.creativeTemperature = clampTemperature(creativeTemperature, warn, `${label}: creativeTemperature`)
     } else warn(`${label}: creativeTemperature must be a number`)

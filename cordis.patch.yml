@@ -26,6 +26,26 @@
               promptMode: web-tone
               temperature: 1
               defaultThinking: off
+          # Chat searches run through an isolated `web` runtime pinned to the
+          # DeepSeek model-backed search (`deepseek-official`), which is billed
+          # as model tokens instead of a per-call Search API fee. Isolating the
+          # service keeps the user's global Web settings and Standard mode
+          # untouched.
+          - id: chat-web
+            name: cordis:group
+            group: true
+            isolate:
+              web: true
+            config:
+              - id: chat-web-runtime
+                name: '@deepseek-ai/dsh-web'
+                config:
+                  searchProvider: deepseek-official
+                  fetchProvider: http
+              - id: chat-web-search
+                name: '@deepseek-ai/dsh-web-search-deepseek'
+              - id: chat-web-fetch
+                name: '@deepseek-ai/dsh-web-fetch-http'
           # Keep long chats usable without adding any user-visible tool. The
           # engine only runs when the context window is under pressure; ordinary
           # turns get no extra system text.

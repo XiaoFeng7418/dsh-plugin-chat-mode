@@ -35,6 +35,7 @@ export const HELP_TEXT = [
  * @property {string} savePath
  * @property {(agent: any) => import('./session.js').ChatSessionState} stateOf
  * @property {Record<string, string | undefined>} [env]
+ * @property {() => { scoped: string | null, global: string | null }} [providerInfo]
  */
 
 /**
@@ -134,7 +135,13 @@ export function registerChatCommands(ctx, deps) {
   const handleStatus = (agent) => {
     const state = deps.stateOf(agent)
     const thinking = options.defaultThinking === 'off' ? '默认关（新会话）' : '跟随界面'
-    return statusText(state, options, thinking)
+    const base = statusText(state, options, thinking)
+    const info = deps.providerInfo?.()
+    if (info === undefined) return base
+    const scoped = info.scoped ?? '未暴露'
+    const global = info.global ?? '未暴露'
+    const mode = options.webSearchProvider === 'inherit' ? 'inherit→宿主' : 'preset 隔离'
+    return `${base}\n搜索通道：${mode}，Chat 侧 ${scoped}；宿主全局 ${global}`
   }
 
   const handleChat = (invocation) => {

@@ -49,12 +49,14 @@ export function apply(ctx, config = {}) {
   const traceFile = options.traceFile
   const trace = traceFile === null ? undefined : (/** @type {Record<string, unknown>} */ line) => writeTrace(traceFile, line, warn)
   const stateFor = (/** @type {any} */ agent) => stateOf(agent, options)
+
   trace?.({
     via: 'apply',
     promptMode: options.promptMode,
     temperature: options.temperature,
     defaultThinking: options.defaultThinking,
     webSearch: options.webSearch,
+    webSearchProvider: options.webSearchProvider,
   })
 
   // A complete section becomes the only section in the assembly, which drops
@@ -90,7 +92,7 @@ export function apply(ctx, config = {}) {
   // the session turned web access on, which keeps the default request free of
   // any `tools` field.
   try {
-    for (const definition of webToolDefinitions(ctx.web, {})) {
+    for (const definition of webToolDefinitions(webRuntime(ctx, options), {})) {
       ctx.tools.register(definition, { when: ({ agent }) => {
         const enabled = stateFor(agent).web
         trace?.({ via: 'tools:when', instance: INSTANCE_ID, sessionId: agent?.session?.id ?? null, tool: definition.name, enabled })
@@ -107,6 +109,7 @@ export function apply(ctx, config = {}) {
     trace,
     savePath: configFilePath(),
     stateOf: stateFor,
+    providerInfo: () => providerInfo(ctx),
   })
 
   ctx.on('agent/created', (payload) => {
@@ -167,6 +170,27 @@ export function apply(ctx, config = {}) {
   })
 }
 
+/**
+ * The `web` service whose providers the two chat tools use. The preset mounts
+ * an isolated `web` runtime pinned to `deepseek-official`, so the shim keeps
+ * the user's global Web settings untouched. `webSearchProvider: 'inherit'` is
+ * the escape hatch for people who deliberately configured their own provider:
+ * it walks to the root context and uses the global runtime instead.
+ *
+ * @param {any} ctx Preset-scoped Cordis context.
+ * @param {{ webSearchProvider: 'deepseek-official' | 'inherit' }} options
+ * @returns {any}
+ */
+function webRuntime(ctx, options) {
+  if (options.webSearchProvider !== 'inherit') return ctx.web
+  try {
+    const root = ctx.root
+    const inherited = root?.get?.('web')
+    return inherited ?? ctx.web
+  } catch {
+    return ctx.web
+  }
+}
 /**
  * Start a new DeepSeek chat without thinking, but only on the first turn and
  * only while the session has not recorded a reasoning level. The harness seeds
@@ -288,4 +312,29 @@ function writeTrace(file, line, warn) {
   } catch (error) {
     warn(`trace write failed: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+/**
+ * Read the search provider id of the preset-scoped and the global `web`
+ * runtime, so `/chat` can prove the preset is isolated from the user's global
+ * Web settings.
+ *
+ * @param {any} ctx Preset-scoped Cordis context.
+ * @returns {{ scoped: string | null, global: string | null }}
+ */
+function providerInfo(ctx) {
+  const read = (/** @type {any} */ service) => {
+    try {
+      return service?.config?.searchProvider?.get?.() ?? null
+    } catch {
+      return null
+    }
+  }
+  let global = null
+  try {
+    global = read(ctx.root?.get?.('web'))
+  } catch {
+    global = null
+  }
+  return { scoped: read(ctx.web), global }
 }
