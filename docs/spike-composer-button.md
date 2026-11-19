@@ -48,7 +48,33 @@ register a button into `conversation.input.right`, call
 `web_search`/`web_fetch`. Keep the host side unchanged (the slash commands already
 provide the behavioural contract).
 
+## Two buttons, one session state (planned for 0.3.0)
+
+The owner wants the slash commands to stay, so the buttons and the commands must be two
+fronts for one state, not two implementations:
+
+- **Thinking toggle** (`off` ↔ `high`, cycles `on` = `high`, `off` = `off`; `low`/`max`
+  stay command-only) and **Web toggle** (`off` ↔ `on`) sit side by side in
+  `conversation.input.right` next to the input.
+- Both buttons call the existing commands through the composer
+  (`inputActions.setDraft("/think high"); inputActions.submit()`), so the session state,
+  the receipts and `/chat savings` keep working with no new host API. The alternative —
+  a host service exposing the state to the client half — can come later if receipts in
+  the transcript turn out to be too noisy for a button click.
+- Button labels mirror DeepSeek web: `深度思考` on/off and `联网搜索` on/off, with the
+  active state read from the session (not from local component state) so a `/think off`
+  typed by hand flips the button on the next render.
+
 ## Status
 
 Blocked at "un-built client half never registers its factory". Host side, protocol shape,
 slot contract and rc.1 parity are all confirmed; only the bundle build remains.
+
+Attempt of 2026-11-20 02:00 (documented for the morning report): recreated the spike
+package with a `document.title = "probe-factory-ran"` marker inside the factory and
+reinstalled it into a fresh `chat-spike` profile. The dev server answered (HTTP 401
+without a token), but every browser-lane tab hung on `Page.getLayoutMetrics` /
+`Page.getFrameTree` for the whole window, so the marker could not be read. The probe is
+still reproducible from `_spike/web-toggle` while it exists; it is not evidence either
+way, and the conclusion above stands on the static reading of `dsh-client-modules`.
+
