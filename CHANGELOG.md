@@ -18,8 +18,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enough) and `creative` (more associations, a little playfulness, paired with
   the higher `creativeTemperature` when the temperature is still `auto`).
 - Optional `web_search` and `web_fetch` tools, off by default and turned on per
-  session with `/web on`. While they are off, the request body still has no
-  `tools` field at all.
+  session with `/web on`. While they are off the request carries no tool
+  schemas (engines from 0.2.2-rc.5 on still emit an empty `"tools": []`, about
+  15 bytes, which the engine's `dsh-llm` layer always passes; plugins cannot
+  remove it). Turning them on adds about **+455 input tokens** as measured on
+  0.2.2-rc.5 (16,230 → 18,050 request bytes).
+- An isolated `web` runtime inside the Chat preset, pinned to
+  `deepseek-official` search and `http` fetch. Model-triggered server search is
+  billed as tokens instead of the per-call Search API, and the user's global Web
+  settings (Standard mode included) are untouched. Set
+  `webSearchProvider: "inherit"` in `~/.dsh/chat-mode.json` to use the global
+  runtime instead.
 - `/chat savings` reports the input tokens this session used against the
   Standard baseline (35,967 by default) and how many were saved, using usage the
   plugin already sees. It costs no extra request.
@@ -37,8 +46,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Per-turn masking no longer denies the two web tools this plugin registers
+  itself, which previously left `/web on` with zero tool schemas.
+- Session tone/temperature/web state is keyed by session id instead of the
+  agent wrapper, so a command and the prompt renderer always see the same state.
 - Tests now cover per-session tone isolation, the web-tool switch, temperature
-  resolution, usage accounting, `/chat save` and the trace file.
+  resolution, usage accounting, `/chat save` and the trace file (31 tests).
+
+### Note
+
+- DSH Go pins its bundled engine to `0.2.2-rc.1` for stability; `0.2.0` uses
+  `pre-step` / `request` paths for its session overrides so the slash commands
+  keep working on that engine as well.
 
 ## [0.1.3] - 2026-11-19
 

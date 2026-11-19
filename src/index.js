@@ -109,7 +109,6 @@ export function apply(ctx, config = {}) {
     trace,
     savePath: configFilePath(),
     stateOf: stateFor,
-    providerInfo: () => providerInfo(ctx),
   })
 
   ctx.on('agent/created', (payload) => {
@@ -312,29 +311,4 @@ function writeTrace(file, line, warn) {
   } catch (error) {
     warn(`trace write failed: ${error instanceof Error ? error.message : String(error)}`)
   }
-}
-
-/**
- * Read the search provider id of the preset-scoped and the global `web`
- * runtime, so `/chat` can prove the preset is isolated from the user's global
- * Web settings.
- *
- * @param {any} ctx Preset-scoped Cordis context.
- * @returns {{ scoped: string | null, global: string | null }}
- */
-function providerInfo(ctx) {
-  const read = (/** @type {any} */ service) => {
-    try {
-      return service?.config?.searchProvider?.get?.() ?? null
-    } catch {
-      return null
-    }
-  }
-  let global = null
-  try {
-    global = read(ctx.root?.get?.('web'))
-  } catch {
-    global = null
-  }
-  return { scoped: read(ctx.web), global }
 }

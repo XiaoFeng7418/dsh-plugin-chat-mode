@@ -39,7 +39,7 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 | `temperature` | 不发送 | **1.0** | **1.0** |
 | 输入 Token | 35,967 | **1,880** | **1,842** |
 
-约 **19 倍**的输入 Token 降幅，且请求里不会出现 `"tools": []` 这种空数组——是整个字段省略。上面两张图就是同一条问候在两个模式下的实际用量（36K vs 1.9K）。
+约 **19 倍**的输入 Token 降幅，且请求里没有任何工具 schema（`rc.5` 会留一个约 15 字节的空 `"tools": []`，见下方说明）。上面两张图就是同一条问候在两个模式下的实际用量（36K vs 1.9K）。
 
 > 数据来自一台装了较多插件的桌面端（其余插件仍会注册全局工具，这是被屏蔽前的数量），不同安装环境的绝对值会有差异；比例和「没有 tools 字段」的结论不依赖具体插件数量。
 
@@ -72,7 +72,7 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 
 切换只影响当前会话；DSH Go 的网页界面同样识别这些命令。
 
-`/web on` 会在请求里多带约 570 字符的两个工具 schema（约 +140–160 input tokens）；如果想让联网搜索走「按 token 计费」而不是独立的 ¥5/1k Search API，请把 DSH 的 Search Provider 改成 `deepseek-official`。
+`/web on` 后请求会多带 `web_search`、`web_fetch` 两个工具 schema，实测请求体从 16,230 字节增至 18,050 字节，约 **+455 input tokens**。Chat 模式自带一个隔离的 `web` 运行时并固定为 `deepseek-official`（模型调用触发的搜索只计 token，不走按次的 Search API），因此**不需要也不应该**去改全局设置：Standard 与其他模式沿用你自己的搜索配置。
 
 ## 安装
 
@@ -106,6 +106,8 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 
 安装后打开新会话，在模式切换器里选 **Chat（轻量对话）**。
 
+> 说明：`rc.5` 引擎在「没有任何工具」时仍会在请求体里输出空的 `"tools": []`（约 15 字节、不含任何 schema）——这是引擎 `dsh-llm` 层的行为，插件无法移除；它不占用可观的 token，也不影响「零工具」的实际效果。
+
 ## 配置
 
 `cordis.patch.yml` 里的预设子行是**只读**的（DSH 的设计：预设提供的配置不允许在 Web 设置页修改，避免一个模式的行为被本地改动悄悄覆盖）。日常调参请写用户覆盖文件：
@@ -129,6 +131,7 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 | `temperature` | `0`–`1.5` 的数字，或 `null` | `1` | 只在非思考请求里发送；`null` 表示永不发送。 |
 | `creativeTemperature` | `0`–`1.5` 的数字 | `1.28` | `creative` 风格且温度仍是 `auto` 时使用。 |
 | `webSearch` | `true`、`false` | `false` | 默认不放行联网工具；`true` 等价于新会话默认 `/web on`。 |
+| `webSearchProvider` | `deepseek-official`、`inherit` | `deepseek-official` | Chat 预设内隔离的搜索通道；`inherit` 改为使用宿主全局 `web` 设置（适合自配第三方搜索源的人）。 |
 | `savingsBaseline` | 整数 | `35967` | `/chat savings` 用来对照的 Standard 输入 token 基线。 |
 | `defaultThinking` | `off`、`follow-ui` | `off` | 对「尚未记录思考档位」的会话首轮关闭思考；`follow-ui` 跟随适配器默认值（当前是开启）。 |
 | `traceFile` | 路径或 `null` | `null` | 可选诊断：分别记录挂载、工具屏蔽、思考档位决策与每次模型调用解析出的配置。 |
@@ -174,7 +177,7 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 ## 兼容性
 
 - 需要支持 preset roster 的 DSH 构建：桌面端（Web 界面）可用；`dsh headless` 明确不组合 preset，无法使用。
-- **安卓 DSH Go 已实机验证（1.1.0，内置引擎 0.2.2-rc.1）**：可从网页界面的「插件 → +」用 GitHub 地址 / Release `.tgz` 链接 / 本地目录安装，装好后在**网页界面**的模式选择器里选「Chat（轻量对话）」使用（详见下一节）。
+- **安卓 DSH Go 已实机验证（1.1.0，内置引擎 0.2.2-rc.1——DSH Go 为保证稳定性固定在该版本）**：可从网页界面的「插件 → +」用 GitHub 地址 / Release `.tgz` 链接 / 本地目录安装，装好后在**网页界面**的模式选择器里选「Chat（轻量对话）」使用（详见下一节）。
 - 本插件不修改 `node_modules`，也不写 profile 的 `package.json`：安装由 `dsh plugin add` 写进 profile 依赖与 `dsh.profile.bundles`，bundle 的 `dsh.bundle.patch` 指向 `cordis.patch.yml`，Loader 启动时插入 `preset-chat` 行。
 
 ### 在 DSH Go（安卓）上使用
@@ -183,10 +186,10 @@ dsh plugin --profile <profile> add /绝对路径/dsh-plugin-chat-mode
 2. DSH Go 的**原生界面只有内置的「工作 / 伙伴小屋 / 酒馆」模式**，不显示 DSH preset。点侧栏里的「切换到网页界面」，在网页界面的新会话页打开模式选择器，选 **Chat（轻量对话）**。
 3. 效果差异（如实说明）：
    - 桌面端（引擎 `rc.3` 及以上）实测：请求无 `tools` 字段、系统提示词 61 字符，输入约 **1.9K tokens**。
-   - DSH Go 内置的 `rc.1` 引擎实测：系统提示词正常生效、同样无 `tools` 字段的请求路径一致，但**可能残留少量其他全局插件注入的上下文或工具**（例如其他插件注册的工具、运行环境提醒），实测输入约 **3.9K tokens**；待 DSH Go 升级引擎后会进一步对齐。只装本插件时可忽略这一差异。
+   - DSH Go 内置的 `rc.1` 引擎实测：系统提示词正常生效、请求路径一致，`v0.2.0` 的斜杠命令与会话覆盖也已改用 `rc.1` 存在的 `pre-step` / `request` 路径（不依赖 `agent/inbox/claimed`）。但**可能残留少量其他全局插件注入的上下文或工具**（例如其他插件注册的工具、运行环境提醒），实测输入约 **3.9K tokens**。只装本插件时可忽略这一差异。
 4. 如果想让手机上也接近桌面端的零工具体验：
    - `rc.1` 上残留的 9 个工具（`list_agents`、`send_message`、`wait_agent`、`team_task_*` 等）由「智能体团队 / `agent-teams`」插件注册在**每个 agent 自己的 scope** 上，而 `tools.restrict` 按设计只能移除**全局**注册的工具，因此本插件无法把它们掩蔽掉（桌面端 `rc.3+` 上这些工具是全局注册，所以能正常移除）。
-   - 实用做法：日常轻聊用不到多智能体协作时，在 DSH Go 的插件管理里**暂时停用 `agent-teams`**（以及其他你不需要、且会向上下文注入内容的全局插件），这 9 个工具的开销就随之消失，接近桌面端的极简体验。等 DSH Go 升级到 `rc.3+` 引擎后就不必再手动停用。
+   - 实用做法：日常轻聊用不到多智能体协作时，在 DSH Go 的插件管理里**暂时停用 `agent-teams`**（以及其他你不需要、且会向上下文注入内容的全局插件），这 9 个工具的开销就随之消失，接近桌面端的极简体验。DSH Go 为保证稳定性固定在 `rc.1`，因此这个手动开关会长期有效。
 
 
 

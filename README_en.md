@@ -58,6 +58,10 @@ omitted. The two screenshots above are that same greeting in both modes
 > (they are the tools being masked, not tools this preset declares). Absolute
 > values vary with the deployment; the ratio and the absent `tools` field do not.
 
+> Note: engines from `0.2.2-rc.5` on still emit an empty `"tools": []` (about
+> 15 bytes, no schemas) when nothing is registered — that array is produced by
+> the engine's `dsh-llm` layer and cannot be removed by a plugin. It carries no
+> token cost worth measuring and does not change the tool-free behaviour.
 ## What it does
 
 - **Zero tools.** The preset declares no `tool-*` rows, and the plugin masks
@@ -107,9 +111,11 @@ request, and no effect on other sessions.
 | `/chat savings` | Estimate the input tokens this session saved against the Standard baseline (35,967) |
 | `/chat save` | Persist tone, temperature and the web switch into `~/.dsh/chat-mode.json` |
 
-`/web on` adds about 570 characters of tool schemas (roughly +140–160 input
-tokens). To make web search bill by tokens instead of the standalone ¥5/1k
-Search API, switch the DSH Search Provider to `deepseek-official`.
+`/web on` adds the `web_search` and `web_fetch` schemas: the request body grows
+from 16,230 to 18,050 bytes, about **+455 input tokens**. Chat ships its own
+isolated `web` runtime pinned to `deepseek-official` (model-token billed server
+search, no per-call Search API fee), so there is nothing to change globally:
+Standard and your other modes keep your own search settings.
 
 ## Install
 
@@ -185,6 +191,7 @@ ignored rather than breaking the preset.
 | `customPrompt` | string | `""` | Used when `promptMode` is `custom`. An empty value also means "no system prompt". |
 | `creativeTemperature` | number in `0`–`1.5` | `1.28` | Used by the `creative` tone while the temperature is still `auto`. |
 | `webSearch` | `true`, `false` | `false` | Allow the web tools by default; `true` equals `/web on` for new sessions. |
+| `webSearchProvider` | `deepseek-official`, `inherit` | `deepseek-official` | Search channel of the isolated preset runtime; `inherit` uses your global `web` settings instead. |
 | `savingsBaseline` | integer | `35967` | Standard input-token baseline used by `/chat savings`. |
 | `temperature` | number `0`–`1.5`, or `null` | `1` | Sent only on non-thinking requests. `null` never sends one. |
 | `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts the first turn of a new chat without thinking unless a level is already recorded; `follow-ui` keeps the adapter default. |
@@ -240,7 +247,7 @@ recording any conversation content.
 ## Compatibility
 
 - DSH Desktop / `dsh web`: tested against the current Desktop bundle.
-- **Android DSH Go: verified on-device (1.1.0, bundled engine `0.2.2-rc.1`).**
+- **Android DSH Go: verified on-device (1.1.0, bundled engine `0.2.2-rc.1`, which DSH Go pins for stability).**
   Install it from the web UI under Plugins → `+` (GitHub URL, release tarball, or
   a local directory path), enable it, then pick **Chat (lightweight)** from the
   preset picker in the *web* interface — see the next section.

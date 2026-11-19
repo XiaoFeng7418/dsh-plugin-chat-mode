@@ -26,6 +26,7 @@
               promptMode: web-tone
               temperature: 1
               defaultThinking: off
+              webSearchProvider: deepseek-official
           # Chat searches run through an isolated `web` runtime pinned to the
           # DeepSeek model-backed search (`deepseek-official`), which is billed
           # as model tokens instead of a per-call Search API fee. Isolating the
