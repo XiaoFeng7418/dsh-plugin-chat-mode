@@ -20,9 +20,9 @@
 import { appendFileSync } from 'node:fs'
 import { configFilePath, isDeepSeekProvider, loadOptions, shouldSendTemperature } from './options.js'
 import { promptForTone } from './prompts.js'
-import { addUsage, resolveTemperature, stateOf } from './session.js'
+import { addUsage, INSTANCE_ID, resolveTemperature, stateOf } from './session.js'
 import { registerChatCommands } from './commands.js'
-import { webToolDefinitions } from './webtools.js'
+import { CHAT_TOOL_NAMES, webToolDefinitions } from './webtools.js'
 
 /** Cordis plugin name. */
 export const name = 'chat-mode'
@@ -68,9 +68,11 @@ export function apply(ctx, config = {}) {
       const state = stateFor(context?.agent)
       trace?.({
         via: 'prompt:render',
+        instance: INSTANCE_ID,
         keys: context === undefined ? [] : Object.keys(context),
         sessionId: context?.agent?.session?.id ?? null,
         tone: state.tone,
+        chars: promptForTone(state).length,
       })
       return promptForTone(state)
     },
@@ -89,7 +91,11 @@ export function apply(ctx, config = {}) {
   // any `tools` field.
   try {
     for (const definition of webToolDefinitions(ctx.web, {})) {
-      ctx.tools.register(definition, { when: ({ agent }) => stateFor(agent).web })
+      ctx.tools.register(definition, { when: ({ agent }) => {
+        const enabled = stateFor(agent).web
+        trace?.({ via: 'tools:when', instance: INSTANCE_ID, sessionId: agent?.session?.id ?? null, tool: definition.name, enabled })
+        return enabled
+      } })
     }
   } catch (error) {
     warn(`could not register web tools: ${error instanceof Error ? error.message : String(error)}`)
@@ -207,7 +213,7 @@ function maskGlobalTools(ctx, warn, trace) {
       trace?.({ via: 'maskGlobalTools:no-service' })
       return
     }
-    const names = tools.definitions().map((/** @type {any} */ definition) => definition.name)
+    const names = tools.definitions().map((/** @type {any} */ definition) => definition.name).filter((name) => !CHAT_TOOL_NAMES.has(name))
     trace?.({ via: 'maskGlobalTools', count: names.length })
     if (names.length === 0) return
     try {
@@ -245,7 +251,7 @@ function stripTools(agent, warn, trace) {
       trace?.({ via: 'stripTools:no-service' })
       return
     }
-    const names = tools.definitions(agent).map((/** @type {any} */ definition) => definition.name)
+    const names = tools.definitions(agent).map((/** @type {any} */ definition) => definition.name).filter((name) => !CHAT_TOOL_NAMES.has(name))
     trace?.({ via: 'stripTools', count: names.length })
     if (names.length === 0) return
     try {

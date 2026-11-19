@@ -11,7 +11,7 @@
 
 import { clampTemperature, PROMPT_MODES, saveConfigFile, TEMPERATURE_MAX, TEMPERATURE_MIN } from './options.js'
 import { promptForTone, TONES } from './prompts.js'
-import { resolveTemperature, savingsOf, usageOf } from './session.js'
+import { INSTANCE_ID, resolveTemperature, savingsOf, usageOf } from './session.js'
 
 /** Text returned by `/chat help`. */
 export const HELP_TEXT = [
@@ -170,7 +170,7 @@ export function registerChatCommands(ctx, deps) {
     const state = deps.stateOf(invocation?.agent)
     if (parsed.tone !== undefined) state.tone = parsed.tone
     if (parsed.customPrompt !== undefined) state.customPrompt = parsed.customPrompt
-    trace?.({ via: 'command:tone', tone: state.tone, customLength: state.customPrompt.length })
+    trace?.({ via: 'command:tone', instance: INSTANCE_ID, sessionId: invocation?.agent?.session?.id ?? null, tone: state.tone, customLength: state.customPrompt.length })
     return `语气切到 ${state.tone}。系统提示 ${promptForTone(state).length} 字符。`
   }
 
@@ -189,7 +189,7 @@ export function registerChatCommands(ctx, deps) {
     if (value !== 'on' && value !== 'off') return '用法：/web on|off'
     const state = deps.stateOf(invocation?.agent)
     state.web = value === 'on'
-    trace?.({ via: 'command:web', web: state.web })
+    trace?.({ via: 'command:web', instance: INSTANCE_ID, sessionId: invocation?.agent?.session?.id ?? null, web: state.web })
     if (!state.web) return '联网已关闭：请求里不再包含任何工具定义。'
     const providerHint = true
     return [

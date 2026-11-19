@@ -188,6 +188,17 @@ test('one unusable tool name at mount does not leave the others visible', () => 
   assert.deepEqual(presetRestrictions, [{ deny: ['code'] }, { deny: ['read'] }])
 })
 
+test('masking never denies the two tools this plugin registers itself', () => {
+  const withOwn = harness({}, { presetNames: ['bash', 'web_search', 'web_fetch'] })
+  assert.deepEqual(withOwn.presetRestrictions, [{ deny: ['bash'] }])
+
+  const { listeners } = harness()
+  const agent = fakeAgent({ names: ['web_search', 'web_fetch', 'other'] })
+  listeners.get('agent/created')({ agent: agent.agent, source: 'startup' })
+  assert.deepEqual(agent.restrictions, [{ deny: ['other'] }])
+  assert.deepEqual(listeners.size > 0, true)
+})
+
 test('the web tools stay hidden until /web on, and only those two are added', () => {
   const h = harness()
   assert.deepEqual(h.registeredTools.map((entry) => entry.definition.name), ['web_search', 'web_fetch'])

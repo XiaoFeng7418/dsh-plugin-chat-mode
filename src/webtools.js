@@ -61,6 +61,14 @@ export function formatFetch(url, result, maxChars) {
 }
 
 /**
+ * Names this plugin registers itself.
+ *
+ * The preset masks every other tool for the whole scope; without this set the
+ * mask would deny these two as well and `when` could never enable them.
+ */
+export const CHAT_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
+
+/**
  * Build the two tool definitions bound to one web service.
  *
  * @param {any} web The `ctx.web` service.

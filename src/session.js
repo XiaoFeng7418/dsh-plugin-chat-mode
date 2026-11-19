@@ -50,6 +50,9 @@ function stateKeyOf(agent) {
   return agent !== null && typeof agent === 'object' ? agent : {}
 }
 
+/** Instance marker: if the package is loaded twice, two ids appear in traces. */
+export const INSTANCE_ID = Math.random().toString(36).slice(2, 8)
+
 /** @type {Map<string, SessionUsage>} */
 const USAGE = new Map()
 
