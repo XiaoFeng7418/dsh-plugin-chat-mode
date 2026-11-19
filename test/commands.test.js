@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { registerChatCommands, savingsText, parseTemperature, parseTone, statusText } from '../src/commands.js'
+import { parseThink, registerChatCommands, savingsText, parseTemperature, parseTone, statusText } from '../src/commands.js'
 import { DEFAULTS } from '../src/options.js'
 import { CONCISE_PROMPT, CREATIVE_PROMPT, WEB_TONE_PROMPT } from '../src/prompts.js'
 import { addUsage, savingsOf, usageOf } from '../src/session.js'
@@ -45,7 +45,7 @@ test('parseTone trims the custom text and collapses inner whitespace', () => {
 
 test('the /chat command names the isolated search channel in user terms', () => {
   /** @type {import('../src/session.js').ChatSessionState} */
-  const state = { tone: 'web-tone', customPrompt: '', temperature: 'auto', web: false }
+  const state = { tone: 'web-tone', customPrompt: '', temperature: 'auto', thinking: 'auto', web: false }
   /**
    * @param {import('../src/options.js').ChatOptions} options
    * @returns {string}
@@ -103,7 +103,7 @@ test('usage accumulates per session id and starts empty', () => {
 test('savingsText explains an empty session and then the estimate', () => {
   const options = { ...DEFAULTS, savingsBaseline: 1000 }
   /** @type {import('../src/session.js').ChatSessionState} */
-  const empty = { tone: 'web-tone', customPrompt: '', temperature: 'auto', web: false }
+  const empty = { tone: 'web-tone', customPrompt: '', temperature: 'auto', thinking: 'auto', web: false }
   assert.match(savingsText(empty, options, 'session-none'), /还没有请求记录/u)
   addUsage('session-with-usage', { inputTokens: 400, outputTokens: 20 })
   const text = savingsText(empty, options, 'session-with-usage')
@@ -116,7 +116,7 @@ test('savingsText explains an empty session and then the estimate', () => {
 test('statusText reports tone, temperature, web and the prompt length', () => {
   const options = DEFAULTS
   /** @type {import('../src/session.js').ChatSessionState} */
-  const webState = { tone: 'web-tone', customPrompt: '', temperature: 'auto', web: false }
+  const webState = { tone: 'web-tone', customPrompt: '', temperature: 'auto', thinking: 'auto', web: false }
   const web = statusText(webState, options, '默认关（新会话）')
   assert.match(web, /tone=web-tone/u)
   assert.match(web, /temp=1/u)
@@ -133,4 +133,56 @@ test('statusText reports tone, temperature, web and the prompt length', () => {
   const off = statusText({ ...webState, temperature: 'off', web: true }, options, '跟随界面')
   assert.match(off, /temp=off/u)
   assert.match(off, /web=on/u)
+})
+
+test('parseThink maps on/off aliases and accepts low/high/max/auto', () => {
+  assert.deepEqual(parseThink('on'), { thinking: 'high', effort: 'high' })
+  assert.deepEqual(parseThink('OFF'), { thinking: 'off', effort: 'off' })
+  assert.deepEqual(parseThink('low'), { thinking: 'low', effort: 'low' })
+  assert.deepEqual(parseThink('max'), { thinking: 'max', effort: 'max' })
+  assert.deepEqual(parseThink('auto'), { thinking: 'auto' })
+  assert.match(parseThink('').error ?? '', /用法/u)
+  assert.match(parseThink('turbo').error ?? '', /未知思考档位/u)
+})
+
+test('/think switches the recorded level and selects the adapter effort', () => {
+  /** @type {Map<string, any>} */
+  const registered = new Map()
+  const ctx = {
+    commands: {
+      register(definition) {
+        registered.set(definition.name, definition)
+        return () => {}
+      },
+    },
+  }
+  /** @type {import('../src/session.js').ChatSessionState} */
+  const state = { tone: 'web-tone', customPrompt: '', temperature: 'auto', thinking: 'auto', web: false }
+  /** @type {any[]} */
+  const selections = []
+  const agent = {
+    session: { id: 'session-think' },
+    model: {
+      current: () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: state.thinking === 'auto' ? undefined : state.thinking }),
+      select(selection) { selections.push(selection) },
+    },
+  }
+  registerChatCommands(ctx, { options: DEFAULTS, warn, savePath: 'C:/tmp/unused.json', stateOf: () => state })
+  const think = registered.get('think')
+  assert.ok(think !== undefined)
+
+  const on = think.handler({ agent, rawInput: 'on' }).text
+  assert.equal(state.thinking, 'high')
+  assert.deepEqual(selections.at(-1), { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' })
+  assert.match(on, /high/u)
+  assert.match(on, /不发送 temperature/u)
+
+  think.handler({ agent, rawInput: 'off' })
+  assert.equal(state.thinking, 'off')
+  assert.deepEqual(selections.at(-1), { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off' })
+
+  const auto = think.handler({ agent, rawInput: 'auto' }).text
+  assert.equal(state.thinking, 'auto')
+  assert.deepEqual(selections.at(-1), { provider: 'deepseek-account', model: 'deepseek-flash' })
+  assert.match(auto, /适配器默认/u)
 })

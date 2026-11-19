@@ -12,7 +12,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Local slash commands that never reach the model: `/chat` (status and help),
   `/tone` (`web` / `empty` / `concise` / `creative` / `custom <text>`),
-  `/temp` (`auto` / `off` / `0`–`1.5`), `/web` (`on` / `off`), `/chat savings`
+  `/temp` (`auto` / `off` / `0`–`1.5`), `/think` (`on` = `high`,
+  `off` / `low` / `max` / `auto`), `/web` (`on` / `off`), `/chat savings`
   and `/chat save`.
 - Two new tone presets: `concise` (answer first, one sentence when one is
   enough) and `creative` (more associations, a little playfulness, paired with
@@ -26,6 +27,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   depend on the user's global Search Provider and model-triggered search is
   billed as tokens instead of per call. `webSearchProvider: "inherit"` in
   `~/.dsh/chat-mode.json` falls back to the host runtime.
+- `/think` switches the session's reasoning effort through `agent.model.select`;
+  `on` maps to `high` (the DeepSeek web client's deep-thinking level) and no
+  temperature is sent while thinking is on.
 - `.github/workflows/ci.yml` (typecheck + tests), `CHANGELOG.md` and README
   badges.
 

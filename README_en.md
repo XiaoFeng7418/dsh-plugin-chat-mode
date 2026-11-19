@@ -77,7 +77,7 @@ omitted. The two screenshots above are that same greeting in both modes
 - **Web-like tone.** The default `web-tone` prompt is an original prompt under
   80 tokens: natural, warm, willing to disagree, honest about uncertainty, no
   canned service phrases. `empty` removes the system prompt entirely.
-- **Local slash commands.** `/tone`, `/temp`, `/web`, `/chat savings` and
+- **Local slash commands.** `/tone`, `/temp`, `/think`, `/web`, `/chat savings` and
   `/chat save` run locally: no tokens, no model round trip, no effect on other
   sessions. `concise` answers first and uses one sentence when one is enough;
   `creative` brings more associations and a higher 1.25–1.3 temperature.
@@ -95,6 +95,19 @@ omitted. The two screenshots above are that same greeting in both modes
 - **No default preset is modified.** The plugin inserts new loader/preset ids
   (`preset-chat` / `chat`); Standard, PTC, Minimal, Creative and any other presets you have installed are untouched.
 
+### How thinking levels reach the API
+
+The DeepSeek Messages protocol has two thinking states, and each level maps onto them:
+
+| Level | Request fields |
+| --- | --- |
+| `off` | `thinking: { type: "disabled" }`, no `output_config` |
+| `low` / `high` / `max` | `thinking: { type: "enabled" }` plus `output_config: { effort: "low" \| "high" \| "max" }` |
+
+With nothing recorded the adapter defaults to `high`, which is the DeepSeek web
+client's deep-thinking level, so `/think on` matches that switch. A `temperature`
+is only sent in the `off` level: the harness rejects a temperature alongside
+thinking, and the plugin drops it for you.
 ### Slash commands
 
 Type them in the composer. Everything happens locally: no tokens, no extra
@@ -107,6 +120,8 @@ request, and no effect on other sessions.
 | `/tone web\|empty\|concise\|creative` | Switch this session's tone |
 | `/tone custom <text>` | Use a short custom system prompt for this session |
 | `/temp auto\|off\|0-1.5` | `auto` follows the tone default (creative uses 1.28), `off` sends no temperature, a number pins it |
+| `/think on\|off\|low\|high\|max` | Thinking toggle: `on` = `high` (the DeepSeek web deep-thinking level), `off` disables it; `low`/`max` fine-tune the effort; requests stop sending a temperature while thinking is on |
+| `/think auto` | Drop this session's thinking pin and fall back to the adapter default (`high` when nothing is recorded) |
 | `/web on\|off` | Allow `web_search` / `web_fetch`; off is the default and the request body has no `tools` field |
 | `/chat savings` | Estimate the input tokens this session saved against the Standard baseline (35,967) |
 | `/chat save` | Persist tone, temperature and the web switch into `~/.dsh/chat-mode.json` |

@@ -49,7 +49,7 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 - **无工作流提示词**：用一个 `complete` 系统提示段整体替换系统提示组装结果，Harness 身份和全部工程规范段落一并消失。
 - **不注入环境**：屏蔽运行时上下文，不再附加 OS、Git、cwd、文件树快照。
 - **接近网页端的语气**：默认 `web-tone` 是原创中文短提示词（61 字，约 50 tokens），自然真诚、有主见、不讨好；用户换语言提问时自动跟随该语言。`empty` 档彻底不要系统提示词。
-- **本地斜杠命令**：`/tone`、`/temp`、`/web`、`/chat savings`、`/chat save` 全部在本地执行，0 token、不经过模型，也不影响其他会话。`concise` 先给结论、能一句不说三句；`creative` 多联想、并配 1.25–1.3 的更高温度。`/web on` 是唯一会额外发送 `web_search`、`web_fetch` 两个 schema 的方式，其余工具始终锁死。`/chat savings` 用本会话已产生的 usage 估算相对 Standard 省下的输入 token。
+- **本地斜杠命令**：`/tone`、`/temp`、`/think`、`/web`、`/chat savings`、`/chat save` 全部在本地执行，0 token、不经过模型，也不影响其他会话。`concise` 先给结论、能一句不说三句；`creative` 多联想、并配 1.25–1.3 的更高温度。`/web on` 是唯一会额外发送 `web_search`、`web_fetch` 两个 schema 的方式，其余工具始终锁死。`/chat savings` 用本会话已产生的 usage 估算相对 Standard 省下的输入 token。
 - **对话向采样参数**：非思考请求默认 `temperature: 1`（可配 0–1.5）。
 - **保留思考模式**：照常在界面里选档位；思考开启时插件不再发送 `temperature`。
 - **长对话仍可压缩**：内置标准压缩后端，只在上下文接近上限时触发；普通轮次不会往系统提示里加东西。
@@ -66,12 +66,24 @@ Chat 模式把这几项全部去掉，并提供一个独立的 preset（`chat`�
 | `/tone web\|empty\|concise\|creative` | 切换本会话风格：`web` 自然口语、`empty` 无系统提示、`concise` 极简直答、`creative` 脑暴润色 |
 | `/tone custom <文案>` | 使用自定义短提示词（仅本会话） |
 | `/temp auto\|off\|0-1.5` | `auto` 跟随风格默认值（creative 为 1.28）、`off` 不发送 temperature、数字则锁定该值 |
+| `/think on\|off\|low\|high\|max` | 深度思考开关：`on` = `high`（与 DeepSeek 网页端深度思考同一档），`off` 完全关闭；`low`/`max` 细调强度；切换后思考开启时不发送 temperature |
+| `/think auto` | 清掉本会话的思考 pin，回到适配器默认（未记录时即 `high`） |
 | `/web on\|off` | 是否放行 `web_search` / `web_fetch`；默认 off，请求体里没有 `tools` 字段 |
 | `/chat savings` | 按本会话累计 usage 对照 Standard 基线（35,967 input tokens）估算省下的输入 token |
 | `/chat save` | 把当前会话的风格、温度、联网开关写入 `~/.dsh/chat-mode.json`，之后所有新会话沿用 |
 
 切换只影响当前会话；DSH Go 的网页界面同样识别这些命令。会话内的切换保存在内存里，DSH 重启后会回到配置文件的默认值；想长期保留就执行 `/chat save`。
 
+### 思考档位怎么发出去
+
+DeepSeek 的 Messages 协议里只有两种思考状态，插件按档位映射：
+
+| 档位 | 请求体字段 |
+| --- | --- |
+| `off` | `thinking: { type: "disabled" }`，不出现 `output_config` |
+| `low` / `high` / `max` | `thinking: { type: "enabled" }` + `output_config: { effort: "low" \| "high" \| "max" }` |
+
+适配器在「没有记录档位」时默认 `high`，这正是 DeepSeek 网页端「深度思考」的档位，所以 `/think on` 就等价于网页端那个开关。`temperature` 只在 `off` 档随请求发送——思考开启时同时传温度会被引擎判为冲突，插件会主动去掉。
 `/web on` 后请求会多带 `web_search`、`web_fetch` 两个工具 schema，实测请求体从 16,230 字节增至 18,050 字节，约 **+455 input tokens**。Chat 模式自带一个隔离的 `web` 运行时并固定为 `deepseek-official`（模型调用触发的搜索只计 token，不走按次的 Search API），因此**不需要也不应该**去改全局设置：Standard 与其他模式沿用你自己的搜索配置。
 
 ## 安装

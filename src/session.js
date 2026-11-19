@@ -14,10 +14,15 @@
  */
 
 /**
+ * @typedef {'auto' | 'off' | 'low' | 'high' | 'max'} ThinkChoice
+ */
+
+/**
  * @typedef {object} ChatSessionState
  * @property {string} tone Current tone id.
  * @property {string} customPrompt Text used by the `custom` tone.
  * @property {TemperatureChoice} temperature `auto` follows the preset config.
+ * @property {ThinkChoice} thinking `auto` leaves the recorded reasoning level alone.
  * @property {boolean} web Whether the two web tools are exposed.
  */
 
@@ -72,6 +77,7 @@ export function stateOf(agent, defaults) {
       tone: defaults.promptMode,
       customPrompt: defaults.customPrompt,
       temperature: 'auto',
+      thinking: 'auto',
       web: defaults.webSearch,
     }
     if (isSessionKey) SESSION_STATES.set(key, state)

@@ -99,12 +99,15 @@ function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', re
   const selections = []
   /** @type {Array<{ deny?: readonly string[], allow?: readonly string[] }>} */
   const restrictions = []
+  /** @type {{ provider: string, model: string, reasoningEffort?: string }} */
+  let selection = { provider, model, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
   const agent = {
     session: { id: sessionId },
     model: {
-      current: () => ({ provider, model, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }),
-      select: (selection) => {
-        selections.push(selection)
+      current: () => selection,
+      select: (next) => {
+        selections.push(next)
+        selection = next
       },
     },
     ctx: {
@@ -390,4 +393,19 @@ test('/web on only exposes the two tools to the session that enabled it', () => 
   h.run('web', enabled, 'on')
   assert.equal(when({ agent: enabled }), true)
   assert.equal(when({ agent: other }), false)
+})
+
+test('/think keeps the temperature out of thinking requests even when /temp pinned one', async () => {
+  const h = harness({ temperature: 1 })
+  const request = h.listeners.get('agent/request')
+  const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high', maxTokens: 100, temperature: 1 })
+  const agent = fakeAgent({ reasoningEffort: 'high' })
+
+  h.run('temp', agent.agent, '0.8')
+  assert.equal('temperature' in (await request({ agent: agent.agent }, next)), false, 'thinking requests never carry a temperature')
+
+  h.run('think', agent.agent, 'off')
+  assert.deepEqual(agent.selections.at(-1), { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off' })
+  const offNext = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100, temperature: 1 })
+  assert.equal((await request({ agent: agent.agent }, offNext)).temperature, 0.8, 'non-thinking keeps the pinned temperature')
 })

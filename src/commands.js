@@ -4,7 +4,7 @@
  * them costs zero tokens and adds no tool schema.
  *
  * Commands: `/chat [help|savings|save]`, `/tone <web|empty|concise|creative|custom [text]>`,
- * `/temp <0-1.5|auto|off>`, `/web <on|off>`.
+ * `/temp <0-1.5|auto|off>`, `/think <on|off|low|high|max|auto>`, `/web <on|off>`.
  *
  * @module dsh-plugin-chat-mode/commands
  */
@@ -12,6 +12,14 @@
 import { clampTemperature, PROMPT_MODES, saveConfigFile, TEMPERATURE_MAX, TEMPERATURE_MIN } from './options.js'
 import { promptForTone, TONES } from './prompts.js'
 import { INSTANCE_ID, resolveTemperature, savingsOf, usageOf } from './session.js'
+
+/**
+ * Thinking levels the DeepSeek Messages adapter accepts. `on` is the user-facing
+ * alias for `high`, which is what the official web client uses for its deep
+ * thinking toggle and what the adapter defaults to when no level is recorded.
+ * @type {readonly string[]}
+ */
+export const THINK_LEVELS = ['off', 'low', 'high', 'max']
 
 /** Text returned by `/chat help`. */
 export const HELP_TEXT = [
@@ -24,6 +32,9 @@ export const HELP_TEXT = [
   '/temp 0.9        设置温度（0–1.5）',
   '/temp auto       恢复预设默认温度（creative 档自动用 1.28）',
   '/temp off        不发送 temperature',
+  '/think on|off    深度思考开关；on = high（与 DeepSeek 网页端同一档）',
+  '/think low|high|max  细调思考强度；max 最慢最贵，low 最快',
+  '/think auto      清掉本会话的思考 pin，回到适配器默认',
   '/web on|off      开关联网搜索与网页抓取（开启后只多 web_search / web_fetch 两个工具）',
 ].join('\n')
 
@@ -52,9 +63,7 @@ export function statusText(state, options, thinking) {
     `会话状态：tone=${state.tone}  temp=${temperatureText}  web=${state.web ? 'on' : 'off'}  thinking=${thinking}`,
     `系统提示：${promptForTone(state).length} 字符（${describePromptLength(state)}）`,
   ].join('\n')
-}
-
-/**
+}/**
  * @param {import('./session.js').ChatSessionState} state
  * @returns {string}
  */
@@ -123,6 +132,26 @@ export function parseTemperature(raw, warn) {
 }
 
 /**
+ * Parse `/think ...`.
+ *
+ * `on` is the same level the DeepSeek web client uses for its deep-thinking
+ * toggle, so it maps to `high`; `off` disables thinking entirely. `auto` clears
+ * the per-session pin and lets the adapter default apply.
+ *
+ * @param {string} raw
+ * @returns {{ thinking?: import('./session.js').ThinkChoice, effort?: string, error?: string }}
+ */
+export function parseThink(raw) {
+  const value = raw.trim().toLowerCase()
+  if (value.length === 0) return { error: '用法：/think on | off | low | high | max | auto' }
+  if (value === 'auto') return { thinking: 'auto' }
+  if (value === 'on' || value === 'true' || value === 'yes') return { thinking: 'high', effort: 'high' }
+  if (value === 'off' || value === 'false' || value === 'no' || value === 'none') return { thinking: 'off', effort: 'off' }
+  if (THINK_LEVELS.includes(value)) return { thinking: /** @type {any} */ (value), effort: value }
+  return { error: `未知思考档位 "${value}"，可选：on, off, low, high, max, auto` }
+}
+
+/**
  * Register all chat commands on the preset scope.
  *
  * @param {any} ctx Preset-scoped Cordis context.
@@ -134,7 +163,11 @@ export function registerChatCommands(ctx, deps) {
 
   const handleStatus = (agent) => {
     const state = deps.stateOf(agent)
-    const thinking = options.defaultThinking === 'off' ? '默认关（新会话）' : '跟随界面'
+    const actual = agent?.model?.current?.()?.reasoningEffort
+    const recorded = state.thinking === 'auto'
+      ? (actual ?? (options.defaultThinking === 'off' ? '关闭' : '适配器默认'))
+      : state.thinking
+    const thinking = state.thinking === 'auto' ? `${recorded}（auto）` : `${recorded}（pin）`
     const base = statusText(state, options, thinking)
     const channel = options.webSearchProvider === 'inherit'
       ? '搜索通道：跟随宿主设置（webSearchProvider: "inherit"）'
@@ -189,6 +222,36 @@ export function registerChatCommands(ctx, deps) {
     return `温度设为 ${String(state.temperature)}（下一轮生效：${effective === null ? '不发送' : String(effective)}）。`
   }
 
+  const handleThink = (invocation) => {
+    const parsed = parseThink(String(invocation?.rawInput ?? ''))
+    if (parsed.error !== undefined) return parsed.error
+    const agent = invocation?.agent
+    const state = deps.stateOf(agent)
+    if (parsed.thinking !== undefined) state.thinking = parsed.thinking
+    const current = agent?.model?.current?.()
+    let applied = '仅影响本会话的温度规则（当前 agent 无模型选择）'
+    if (current?.provider !== undefined && current?.model !== undefined) {
+      try {
+        /** @type {{ provider: string, model: string, reasoningEffort?: string }} */
+        const selection = { provider: current.provider, model: current.model }
+        if (parsed.effort !== undefined) selection.reasoningEffort = parsed.effort
+        agent.model.select(selection)
+        applied = parsed.effort === undefined ? '已回到适配器默认档位' : `已切到 ${parsed.effort}`
+      } catch (error) {
+        warn(`could not switch thinking: ${error instanceof Error ? error.message : String(error)}`)
+        applied = '切换失败，详情见日志'
+      }
+    }
+    const actual = agent?.model?.current?.()?.reasoningEffort ?? '适配器默认'
+    trace?.({ via: 'command:think', instance: INSTANCE_ID, sessionId: agent?.session?.id ?? null, choice: state.thinking, effort: parsed.effort ?? null })
+    return [
+      `思考档位：${state.thinking}（模型当前：${actual}）。${applied}。`,
+      parsed.effort === 'off'
+        ? '温度会照常发送（思考关闭时可发送 temperature）。'
+        : '思考开启时不发送 temperature，避免与思考模式冲突。',
+    ].join('\n')
+  }
+
   const handleWeb = (invocation) => {
     const value = String(invocation?.rawInput ?? '').trim().toLowerCase()
     if (value !== 'on' && value !== 'off') return '用法：/web on|off'
@@ -210,6 +273,7 @@ export function registerChatCommands(ctx, deps) {
     { name: 'chat', description: '查看会话状态；/chat help | savings | save', input: { hint: 'help | savings | save' }, handler: handleChat },
     { name: 'tone', description: '切换语气：web | empty | concise | creative | custom <text>', input: { hint: 'web | empty | concise | creative | custom <text>' }, handler: handleTone },
     { name: 'temp', description: '设置温度：0–1.5 | auto | off', input: { hint: '0-1.5 | auto | off' }, handler: handleTemperature },
+    { name: 'think', description: '深度思考开关：on(=high) | off | low | max | auto', input: { hint: 'on | off | low | high | max | auto' }, handler: handleThink },
     { name: 'web', description: '开关联网工具：on | off', input: { hint: 'on | off' }, handler: handleWeb },
   ]
 
