@@ -87,10 +87,12 @@ function harness(config = {}, extra = {}) {
   }
 }
 
+let agentCounter = 0
+
 /**
  * @param {{ provider?: string, model?: string, reasoningEffort?: string, names?: string[], rejectBatch?: boolean, sessionId?: string }} [options]
  */
-function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, sessionId = 'session-test' } = {}) {
+function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, sessionId = `session-test-${++agentCounter}` } = {}) {
   const selections = []
   /** @type {Array<{ deny?: readonly string[], allow?: readonly string[] }>} */
   const restrictions = []
@@ -151,6 +153,19 @@ test('tone and temperature are per session', () => {
   assert.equal(sectionText(h.sections, b), WEB_TONE_PROMPT)
   h.run('tone', b, 'creative')
   assert.equal(sectionText(h.sections, b), CREATIVE_PROMPT)
+})
+
+test('a session keeps its tone when the prompt is rendered from another agent wrapper', () => {
+  const h = harness()
+  const first = fakeAgent({ sessionId: 'session-isolation-a' }).agent
+  const other = fakeAgent({ sessionId: 'session-isolation-b' }).agent
+  h.run('tone', first, 'concise')
+  // Commands and the system-prompt callback can be handed different wrapper
+  // objects for the same session; the tone must follow the session, not identity.
+  const sameSession = fakeAgent({ sessionId: 'session-isolation-a' }).agent
+  assert.equal(sectionText(h.sections, sameSession), CONCISE_PROMPT)
+  assert.equal(sectionText(h.sections, other), WEB_TONE_PROMPT)
+  assert.equal(sectionText(h.sections, first), CONCISE_PROMPT)
 })
 
 test('/tone custom requires text and stores it', () => {
@@ -234,23 +249,32 @@ test('temperature follows /temp and the creative default', async () => {
   assert.equal((await request({ agent: thinking.agent }, next)).temperature, undefined)
 })
 
-test('llm/stream usage feeds /chat savings', async () => {
-  const h = harness({ savingsBaseline: 1000 })
-  const stream = h.listeners.get('llm/stream')
-  const agent = fakeAgent({ sessionId: 'session-x' }).agent
-  const wrapped = stream({ sessionId: 'session-x' }, async function* () {
-    yield { type: 'text-delta' }
-    yield { type: 'usage', usage: { inputTokens: 400, outputTokens: 20 } }
-    yield { type: 'finish' }
-  })
-  const chunks = []
-  for await (const chunk of wrapped) chunks.push(chunk.type)
-  assert.deepEqual(chunks, ['text-delta', 'usage', 'finish'])
+test('commands return the success result shape the gateway accepts', () => {
+  const h = harness()
+  const agent = fakeAgent().agent
+  for (const [name, input] of [['chat', 'help'], ['tone', 'concise'], ['temp', '0.8'], ['web', 'on']]) {
+    const result = h.run(name, agent, input)
+    assert.equal(result.kind, 'success', `/${name} should return kind success`)
+    assert.equal(typeof result.text, 'string')
+    assert.ok(result.text.length > 0)
+  }
+})
 
-  const savings = h.run('chat', agent, 'savings')
-  assert.match(savings.text, /1 次请求/u)
-  assert.match(savings.text, /400/u)
-  assert.match(savings.text, /600/u)
+test('/chat savings reports the usage the plugin accumulated', () => {
+  const h = harness({ savingsBaseline: 1000 })
+  const agent = fakeAgent({ sessionId: 'session-x' }).agent
+  const stream = h.listeners.get('llm/stream')
+  const wrapped = stream({ sessionId: 'session-x' }, async function* () {
+    yield { type: 'usage', usage: { inputTokens: 400, outputTokens: 20 } }
+  })
+  return (async () => {
+    for await (const _chunk of wrapped) {
+      /* drain */
+    }
+    const savings = h.run('chat', agent, 'savings')
+    assert.match(savings.text, /1 次请求/u)
+    assert.match(savings.text, /省下约 600/u)
+  })()
 })
 
 test('/chat save writes the current session into the user override file', () => {

@@ -31,6 +31,25 @@
 /** @type {WeakMap<object, ChatSessionState>} */
 const STATES = new WeakMap()
 
+/** @type {Map<string, ChatSessionState>} */
+const SESSION_STATES = new Map()
+
+/**
+ * Resolve the state key for one agent.
+ *
+ * Command invocations and system-prompt callbacks can hand over different agent
+ * wrapper objects for the same session, so the session id is the stable key; a
+ * bare object is only a last resort for callers that have no session yet.
+ *
+ * @param {any} agent
+ * @returns {string | object}
+ */
+function stateKeyOf(agent) {
+  const id = agent?.session?.id
+  if (typeof id === 'string' && id.length > 0) return id
+  return agent !== null && typeof agent === 'object' ? agent : {}
+}
+
 /** @type {Map<string, SessionUsage>} */
 const USAGE = new Map()
 
@@ -42,8 +61,9 @@ const USAGE = new Map()
  * @returns {ChatSessionState}
  */
 export function stateOf(agent, defaults) {
-  const key = agent !== null && typeof agent === 'object' ? agent : {}
-  let state = STATES.get(key)
+  const key = stateKeyOf(agent)
+  const isSessionKey = typeof key === 'string'
+  let state = isSessionKey ? SESSION_STATES.get(key) : STATES.get(key)
   if (state === undefined) {
     state = {
       tone: defaults.promptMode,
@@ -51,7 +71,8 @@ export function stateOf(agent, defaults) {
       temperature: 'auto',
       web: defaults.webSearch,
     }
-    STATES.set(key, state)
+    if (isSessionKey) SESSION_STATES.set(key, state)
+    else STATES.set(key, state)
   }
   return state
 }

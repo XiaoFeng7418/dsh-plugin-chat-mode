@@ -64,7 +64,16 @@ export function apply(ctx, config = {}) {
   ctx.effect(() => ctx.systemPrompt.section({
     name: SECTION_NAME,
     order: 0,
-    text: (/** @type {any} */ context) => promptForTone(stateFor(context?.agent)),
+    text: (/** @type {any} */ context) => {
+      const state = stateFor(context?.agent)
+      trace?.({
+        via: 'prompt:render',
+        keys: context === undefined ? [] : Object.keys(context),
+        sessionId: context?.agent?.session?.id ?? null,
+        tone: state.tone,
+      })
+      return promptForTone(state)
+    },
     complete: true,
   }), 'chat-mode.prompt')
   ctx.effect(() => ctx.systemPrompt.suppressRuntimeContext(), 'chat-mode.runtime-context')

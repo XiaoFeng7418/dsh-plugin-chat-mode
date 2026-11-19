@@ -203,10 +203,10 @@ export function registerChatCommands(ctx, deps) {
   }
 
   const definitions = [
-    { name: 'chat', description: '查看会话状态；/chat help | savings | save', handler: handleChat },
-    { name: 'tone', description: '切换语气：web | empty | concise | creative | custom <text>', handler: handleTone },
-    { name: 'temp', description: '设置温度：0–1.5 | auto | off', handler: handleTemperature },
-    { name: 'web', description: '开关联网工具：on | off', handler: handleWeb },
+    { name: 'chat', description: '查看会话状态；/chat help | savings | save', input: { hint: 'help | savings | save' }, handler: handleChat },
+    { name: 'tone', description: '切换语气：web | empty | concise | creative | custom <text>', input: { hint: 'web | empty | concise | creative | custom <text>' }, handler: handleTone },
+    { name: 'temp', description: '设置温度：0–1.5 | auto | off', input: { hint: '0-1.5 | auto | off' }, handler: handleTemperature },
+    { name: 'web', description: '开关联网工具：on | off', input: { hint: 'on | off' }, handler: handleWeb },
   ]
 
   for (const definition of definitions) {
@@ -214,7 +214,10 @@ export function registerChatCommands(ctx, deps) {
       ctx.commands.register({
         name: definition.name,
         description: definition.description,
-        handler: (/** @type {any} */ invocation) => ({ kind: 'text', text: definition.handler(invocation) }),
+        input: definition.input,
+        // The rc.5 command contract is `{ kind: 'success', text }` or
+        // `{ kind: 'error', text }`; anything else is rejected by the gateway.
+        handler: (/** @type {any} */ invocation) => ({ kind: 'success', text: definition.handler(invocation) }),
       })
     } catch (error) {
       warn(`could not register /${definition.name}: ${error instanceof Error ? error.message : String(error)}`)
