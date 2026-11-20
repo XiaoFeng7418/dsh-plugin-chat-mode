@@ -190,9 +190,17 @@ window.__ModuleLoader__.load({
               subscribeExecuted: (listener) => {
                 const handler = (event) => {
                   try {
-                    if (event && event.sessionId !== undefined && event.name !== undefined) {
-                      if (event.name === 'web' || event.name === 'chat') listener(event.sessionId)
+                    if (!event || event.sessionId === undefined || event.name === undefined) return
+                    if (event.name === 'web') {
+                      // A typed /web on|off runs on the Host; the receipt is the
+                      // only signal the client gets, so mirror it into the cache.
+                      const text = typeof event.result?.text === 'string' ? event.result.text : ''
+                      const on = /已开启|: on\b|开启/i.test(text)
+                      const off = /已关闭|: off\b|关闭/i.test(text)
+                      if (on && !off) rememberWeb(event.sessionId, true)
+                      else if (off && !on) rememberWeb(event.sessionId, false)
                     }
+                    if (event.name === 'web' || event.name === 'chat') listener(event.sessionId)
                   } catch { /* never break other listeners */ }
                 }
                 return ctx.on('command/executed', handler)
