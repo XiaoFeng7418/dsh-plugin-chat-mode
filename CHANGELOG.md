@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-20
+
+### Added
+
+- Toggle icons follow the DeepSeek chat UI: two-tone SVG line icons (no emoji),
+  Chinese labels "深度思考" / "联网搜索" (English builds use "DeepThink" /
+  "Search"), 34px pills with a 13px label, and a DeepSeek-blue active state
+  instead of the theme's near-black brand token.
+- Hover hints are a CSS-only bubble that fades in after 380ms
+  ("先思考后回答，解决推理问题" / "按需搜索网页") and collapses the moment the
+  button is pressed, so a click never waits for a tooltip.
+- Subtle motion: 180ms color/elevation easing, a 120ms press-in,
+  `scale(0.95)` while held, a 220ms icon pop when a toggle turns on, and a soft
+  2px glow instead of a hard ring. All of it respects
+  `prefers-reduced-motion: reduce`.
+
+### Fixed
+
+- **The Chat request could still carry a tool it does not belong to.**
+  `working_directory` (a global tool added by newer DSH builds) leaked into the
+  request because the mask only denied names it already knew. The mask now uses
+  a per-session allow list (`web_search` / `web_fetch`, or nothing) that is
+  immune to tools introduced later.
+- Older engines: `@deepseek-ai/dsh` 0.2.1-rc.2 accepts `tools.restrict` only in
+  an agent scope and ignores `register(definition, { when })`, so the web tools
+  are registered unconditionally there and the allow list does the gating
+  (`allow-own` -> `allow-none` -> deny fallback). Reasoning and web toggles now
+  behave the same on rc.2 and rc.5.
+- Two-tone icon colors were re-checked against WCAG AA: 5.07:1 (idle label),
+  4.68:1 (hover), 6.31:1 / 5.38:1 in dark mode.
+
 ## [0.3.0] - 2026-11-20
 
 ### Added

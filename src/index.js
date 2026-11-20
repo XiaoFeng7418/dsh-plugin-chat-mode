@@ -86,15 +86,10 @@ export function apply(ctx, config = {}) {
   }), 'chat-mode.prompt')
   ctx.effect(() => ctx.systemPrompt.suppressRuntimeContext(), 'chat-mode.runtime-context')
 
-  // A preset cannot unregister another plugin's global tools, so they are
-  // masked for this preset's whole scope first, and again on every later step
-  // for tools that a plugin registers after the preset mounted.
-  maskGlobalTools(ctx, warn, trace)
-
-  // The two web tools are scoped registrations, so the global mask above does
-  // not touch them. `when` hides them from declarations *and* dispatch unless
-  // the session turned web access on, which keeps the default request free of
-  // any `tools` field.
+  // The two web tools are registered first: the scope-wide mask below keeps
+  // only these names, so the allow list must already see them. `when` hides
+  // them from declarations *and* dispatch unless the session turned web access
+  // on, which keeps the default request free of any `tools` field.
   try {
     for (const definition of webToolDefinitions(webRuntime(ctx, options), {})) {
       ctx.tools.register(definition, { when: ({ agent }) => {
@@ -107,6 +102,12 @@ export function apply(ctx, config = {}) {
     warn(`could not register web tools: ${error instanceof Error ? error.message : String(error)}`)
   }
 
+  // A preset cannot unregister another plugin's global tools, so the scope is
+  // restricted to the two names above. An allow list is name-independent: a
+  // tool that a newer harness build adds later stays out without a plugin
+  // update, which a deny list of today's names would not guarantee.
+  maskGlobalTools(ctx, warn, trace)
+
   registerChatCommands(ctx, {
     options,
     warn,
@@ -116,7 +117,7 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.on('agent/created', (payload) => {
-    stripTools(payload?.agent, warn, trace)
+    stripTools(payload?.agent, warn, trace, stateFor)
   })
 
   // Keep masking on later steps too: a plugin that registers a tool lazily
@@ -124,7 +125,7 @@ export function apply(ctx, config = {}) {
   // step decision through: a waterfall listener that returns nothing would
   // replace the prepared step with `undefined`.
   ctx.on('agent/pre-step', (payload, next) => {
-    stripTools(payload.agent, warn, trace)
+    stripTools(payload.agent, warn, trace, stateFor)
     return next()
   })
 
@@ -133,7 +134,7 @@ export function apply(ctx, config = {}) {
   // on runtimes that dispatch it (0.2.2-rc.3). On 0.2.2-rc.1 the event is not
   // dispatched; the pre-step fallback below then covers later turns instead.
   ctx.on('agent/inbox/claimed', (payload) => {
-    stripTools(payload?.agent, warn, trace)
+    stripTools(payload?.agent, warn, trace, stateFor)
     if (options.defaultThinking === 'off') defaultToNonThinking(payload?.agent, payload?.turn, warn, trace)
   })
 
@@ -261,23 +262,81 @@ function maskGlobalTools(ctx, warn, trace) {
       trace?.({ via: 'maskGlobalTools:no-service' })
       return
     }
-    const names = tools.definitions().map((/** @type {any} */ definition) => definition.name).filter((name) => !CHAT_TOOL_NAMES.has(name))
-    trace?.({ via: 'maskGlobalTools', count: names.length })
-    if (names.length === 0) return
-    try {
-      tools.restrict({ deny: names })
-    } catch {
-      for (const name of names) {
-        try {
-          tools.restrict({ deny: [name] })
-        } catch {
-          warn(`could not restrict tool "${name}"`)
-        }
-      }
-    }
+    applyScopeRestriction(tools, 'maskGlobalTools', warn, trace, [...CHAT_TOOL_NAMES], false)
   } catch (error) {
     trace?.({ via: 'maskGlobalTools:error', message: error instanceof Error ? error.message : String(error) })
     warn(`could not mask global tools: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Restrict one tool scope to the two names this plugin owns.
+ *
+ * Older engines (0.2.1 and the DSH Go builds) expose `tools.restrict` but no
+ * `tools.definitions`, so the restriction cannot be derived from the current
+ * tool list there. The order below keeps every engine covered:
+ *
+ * 1. allow only the two chat tools — correct when they are global rows, which
+ *    is how this plugin registers them, and name-independent for everything a
+ *    later build adds;
+ * 2. allow nothing at all — used when the two names are not global in this
+ *    composition (they are registered per agent instead);
+ * 3. deny whatever is currently listed, which needs `definitions`.
+ *
+ * The allow list is the one lever every supported engine honours: 0.2.1 has no
+ * `when` option on `register` (tools are registered unconditionally there) and
+ * no `tools.definitions`, so the per-request scope restriction is what keeps a
+ * web-off session tool-free.
+ *
+ * The empty fallback only belongs to a caller that derives its allow list from
+ * the live scope. A preset that allows nothing would filter out the two tools
+ * this plugin registered there, because every layer on the chain has to admit a
+ * name for the agent to see it.
+ *
+ * @param {any} tools Tool service from a preset or agent scope.
+ * @param {string} via Trace tag of the calling helper.
+ * @param {(message: string) => void} warn
+ * @param {((line: Record<string, unknown>) => void) | undefined} trace
+ * @param {readonly string[]} allow Tool names this scope may keep.
+ * @param {boolean} allowEmptyFallback Whether an empty allow list may replace a failed allow-own.
+ */
+function applyScopeRestriction(tools, via, warn, trace, allow, allowEmptyFallback) {
+  try {
+    tools.restrict({ allow: [...allow] })
+    trace?.({ via, mode: 'allow-own', allow: [...allow] })
+    return
+  } catch (error) {
+    trace?.({ via: `${via}:allow-own-failed`, message: error instanceof Error ? error.message : String(error) })
+  }
+  if (!allowEmptyFallback || allow.length === 0) return
+  try {
+    tools.restrict({ allow: [] })
+    trace?.({ via, mode: 'allow-none' })
+    return
+  } catch (error) {
+    trace?.({ via: `${via}:allow-none-failed`, message: error instanceof Error ? error.message : String(error) })
+  }
+  let known = []
+  try {
+    known = tools.definitions().map((/** @type {any} */ definition) => definition.name)
+  } catch (error) {
+    trace?.({ via: `${via}:definitions-failed`, message: error instanceof Error ? error.message : String(error) })
+    warn('could not list tools to mask; this engine needs an allow-list restriction')
+    return
+  }
+  const deny = known.filter((name) => !CHAT_TOOL_NAMES.has(name))
+  trace?.({ via, mode: 'deny-rest', known: known.length, deny })
+  if (deny.length === 0) return
+  try {
+    tools.restrict({ deny })
+  } catch {
+    for (const name of deny) {
+      try {
+        tools.restrict({ deny: [name] })
+      } catch {
+        warn(`could not restrict tool "${name}"`)
+      }
+    }
   }
 }
 
@@ -291,32 +350,17 @@ function maskGlobalTools(ctx, warn, trace) {
  * @param {any} agent Agent created under this preset.
  * @param {(message: string) => void} warn
  * @param {((line: Record<string, unknown>) => void) | undefined} trace
+ * @param {(agent: any) => { web: boolean }} stateOf Session state for this agent.
  */
-function stripTools(agent, warn, trace) {
+function stripTools(agent, warn, trace, stateOf) {
   try {
     const tools = agent?.ctx?.tools
     if (tools === undefined) {
       trace?.({ via: 'stripTools:no-service' })
       return
     }
-    const names = tools.definitions(agent).map((/** @type {any} */ definition) => definition.name).filter((name) => !CHAT_TOOL_NAMES.has(name))
-    trace?.({ via: 'stripTools', count: names.length })
-    if (names.length === 0) return
-    try {
-      tools.restrict({ deny: names })
-    } catch (batchError) {
-      trace?.({ via: 'stripTools:batch-failed', message: batchError instanceof Error ? batchError.message : String(batchError) })
-      // One unusable name (for example the reserved code-mode transport) must
-      // not leave every other tool visible, so fall back to one name at a time.
-      for (const name of names) {
-        try {
-          tools.restrict({ deny: [name] })
-        } catch (error) {
-          trace?.({ via: 'stripTools:failed', name, message: error instanceof Error ? error.message : String(error) })
-          warn(`could not restrict tool "${name}"`)
-        }
-      }
-    }
+    const allow = stateOf(agent).web ? [...CHAT_TOOL_NAMES] : []
+    applyScopeRestriction(tools, 'stripTools', warn, trace, allow, true)
   } catch (error) {
     trace?.({ via: 'stripTools:error', message: error instanceof Error ? error.message : String(error) })
     warn(`could not restrict tools: ${error instanceof Error ? error.message : String(error)}`)

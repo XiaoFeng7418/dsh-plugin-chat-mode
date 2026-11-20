@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-chat-mode",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Minimal, tool-free chat preset for DeepSeek Harness: no workflow prompt, no environment snapshot, no tool schemas.",
   "license": "MIT",
   "type": "module",
@@ -24,7 +24,8 @@
     "README.md",
     "README_en.md",
     "LICENSE",
-    "docs"
+    "docs",
+    "NOTICE"
   ],
   "keywords": [
     "dsh",

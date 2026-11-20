@@ -10,7 +10,7 @@ import { CONCISE_PROMPT, CREATIVE_PROMPT, WEB_TONE_PROMPT } from '../src/prompts
  * Build a fake preset context that records what the plugin registers.
  *
  * @param {Record<string, unknown>} [config]
- * @param {{ traceFile?: string, presetNames?: string[], rejectPresetBatch?: boolean, presetDefinitionsThrows?: boolean }} [extra]
+ * @param {{ traceFile?: string, presetNames?: string[], rejectPresetAllow?: boolean, rejectPresetBatch?: boolean, presetDefinitionsThrows?: boolean }} [extra]
  */
 function harness(config = {}, extra = {}) {
   /** @type {Array<any>} */
@@ -58,6 +58,8 @@ function harness(config = {}, extra = {}) {
         return presetNames.map((name) => ({ name }))
       },
       restrict: (filter) => {
+        if (extra.presetDefinitionsThrows === true) throw new Error('tools service not ready')
+        if (extra.rejectPresetAllow === true && filter.allow !== undefined) throw new Error('allow not supported')
         if (extra.rejectPresetBatch === true && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
         presetRestrictions.push(filter)
         return () => {}
@@ -93,9 +95,9 @@ function harness(config = {}, extra = {}) {
 let agentCounter = 0
 
 /**
- * @param {{ provider?: string, model?: string, reasoningEffort?: string, names?: string[], rejectBatch?: boolean, sessionId?: string, definitionsThrows?: boolean }} [options]
+ * @param {{ provider?: string, model?: string, reasoningEffort?: string, names?: string[], rejectBatch?: boolean, rejectAllow?: boolean, sessionId?: string, definitionsThrows?: boolean }} [options]
  */
-function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, sessionId = `session-test-${++agentCounter}`, definitionsThrows = false } = {}) {
+function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', reasoningEffort, names = [], rejectBatch = false, rejectAllow = false, sessionId = `session-test-${++agentCounter}`, definitionsThrows = false } = {}) {
   const selections = []
   /** @type {Array<{ deny?: readonly string[], allow?: readonly string[] }>} */
   const restrictions = []
@@ -117,6 +119,8 @@ function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', re
           return names.map((name) => ({ name }))
         },
         restrict: (filter) => {
+          if (definitionsThrows) throw new Error('tools service not ready')
+          if (rejectAllow && (filter.allow?.length ?? 0) > 0) throw new Error('allow not supported')
           if (rejectBatch && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
           restrictions.push(filter)
           return () => {}
@@ -187,24 +191,40 @@ test('/tone custom requires text and stores it', () => {
   assert.equal(sectionText(h.sections, agent), '你是简洁的助手')
 })
 
-test('mounting masks every globally registered tool for the whole preset', () => {
+test('mounting restricts the preset scope to the two chat tools', () => {
   const { presetRestrictions } = harness({}, { presetNames: ['bash', 'read', 'mcp__x__y'] })
-  assert.deepEqual(presetRestrictions, [{ deny: ['bash', 'read', 'mcp__x__y'] }])
+  assert.deepEqual(presetRestrictions, [{ allow: ['web_search', 'web_fetch'] }])
 })
 
-test('one unusable tool name at mount does not leave the others visible', () => {
-  const { presetRestrictions } = harness({}, { presetNames: ['code', 'read'], rejectPresetBatch: true })
-  assert.deepEqual(presetRestrictions, [{ deny: ['code'] }, { deny: ['read'] }])
+test('a preset whose allow list the runtime rejects is left unrestricted', () => {
+  const { presetRestrictions } = harness({}, { presetNames: ['code', 'read'], rejectPresetAllow: true })
+  // An empty allow list here would also filter out the two tools this plugin
+  // registered in the same scope, so the preset must not fall back to it; the
+  // per-agent mask below covers every request.
+  assert.deepEqual(presetRestrictions, [])
 })
 
-test('masking never denies the two tools this plugin registers itself', () => {
+test('an agent scope falls back to an empty allow list when allow-own is rejected', () => {
+  const { listeners, run } = harness()
+  const agent = fakeAgent({ names: ['bash', 'read'], rejectAllow: true })
+  run('web', agent.agent, 'on')
+  listeners.get('agent/created')({ agent: agent.agent, source: 'startup' })
+  assert.deepEqual(agent.restrictions, [{ allow: [] }])
+})
+
+test('a preset keeps only the two chat tools; an agent keeps them only while web is on', () => {
   const withOwn = harness({}, { presetNames: ['bash', 'web_search', 'web_fetch'] })
-  assert.deepEqual(withOwn.presetRestrictions, [{ deny: ['bash'] }])
+  assert.deepEqual(withOwn.presetRestrictions, [{ allow: ['web_search', 'web_fetch'] }])
 
-  const { listeners } = harness()
+  const { listeners, run } = harness()
   const agent = fakeAgent({ names: ['web_search', 'web_fetch', 'other'] })
   listeners.get('agent/created')({ agent: agent.agent, source: 'startup' })
-  assert.deepEqual(agent.restrictions, [{ deny: ['other'] }])
+  // Web off: an empty allow list is what keeps the request tool-free on engines
+  // whose `register` ignores the `when` option (0.2.1).
+  assert.deepEqual(agent.restrictions, [{ allow: [] }])
+  run('web', agent.agent, 'on')
+  listeners.get('agent/pre-step')({ agent: agent.agent }, () => Promise.resolve({ kind: 'enter', messages: [] }))
+  assert.deepEqual(agent.restrictions, [{ allow: [] }, { allow: ['web_search', 'web_fetch'] }])
   assert.deepEqual(listeners.size > 0, true)
 })
 
@@ -224,12 +244,12 @@ test('agent creation and later steps mask every tool the agent still inherits', 
   const { listeners } = harness()
   const created = fakeAgent({ names: ['late-tool', 'later-tool'] })
   listeners.get('agent/created')({ agent: created.agent, source: 'startup' })
-  assert.deepEqual(created.restrictions, [{ deny: ['late-tool', 'later-tool'] }])
+  assert.deepEqual(created.restrictions, [{ allow: [] }])
 
   const stepped = fakeAgent({ names: ['late-tool'] })
   const decision = { kind: 'enter', messages: [] }
   const result = await listeners.get('agent/pre-step')({ agent: stepped.agent }, () => Promise.resolve(decision))
-  assert.deepEqual(stepped.restrictions, [{ deny: ['late-tool'] }])
+  assert.deepEqual(stepped.restrictions, [{ allow: [] }])
   assert.equal(result, decision)
 })
 
@@ -351,7 +371,7 @@ test('a trace file records the mount mask, the usage and the request', async () 
 
   const lines = readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
   assert.equal(lines[0].via, 'apply')
-  assert.equal(lines.find((line) => line.via === 'maskGlobalTools')?.count, 1)
+  assert.equal(lines.find((line) => line.via === 'maskGlobalTools')?.mode, 'allow-own')
   assert.equal(lines.find((line) => line.via === 'agent/inbox/claimed')?.applied, true)
   assert.equal(lines.find((line) => line.via === 'llm/usage')?.input, 7)
   const requestLine = lines.find((line) => line.via === 'agent/request')
@@ -364,13 +384,13 @@ test('a 0.2.2-rc.1 engine without claimed events still masks tools and sends tem
   const h = harness()
   const created = fakeAgent({ names: ['late-tool'] })
   h.listeners.get('agent/created')({ agent: created.agent, source: 'startup' })
-  assert.deepEqual(created.restrictions, [{ deny: ['late-tool'] }])
+  assert.deepEqual(created.restrictions, [{ allow: [] }])
 
   const stepped = fakeAgent({ names: ['late-tool', 'web_search'], reasoningEffort: 'off' })
   const decision = { kind: 'enter', messages: [] }
   const passed = await h.listeners.get('agent/pre-step')({ agent: stepped.agent }, () => Promise.resolve(decision))
   assert.equal(passed, decision)
-  assert.deepEqual(stepped.restrictions, [{ deny: ['late-tool'] }])
+  assert.deepEqual(stepped.restrictions, [{ allow: [] }])
 
   const request = h.listeners.get('agent/request')
   const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100 })
