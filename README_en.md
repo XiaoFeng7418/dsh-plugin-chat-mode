@@ -6,33 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/XiaoFeng7418/dsh-plugin-chat-mode)](https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A minimal, **tool-free chat preset** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
-
-It adds a `chat` mode to the mode switcher: no tool schemas, no engineering
-workflow prompt, no environment snapshot — just a short conversation-tone system
-prompt and a temperature that suits everyday chat. It is meant for the times
-when you want to use the API like the DeepSeek web app instead of starting a
-coding agent.
-
-## Why
-
-The default presets are built for work. Every request carries a hundred tool
-schemas plus a multi-kilobyte system prompt with file-editing discipline,
-planning rules and a runtime snapshot of the OS, git state, cwd and file tree.
-That is the right trade-off for agent work, and the wrong one for "explain this
-paragraph to me":
-
-- tool definitions dominate the prompt even when no tool is ever called;
-- the workflow language makes the model sound like a task worker ("当然可以！我很乐意为您解答");
-- a chat that never touches the filesystem still pays for the filesystem rules.
-
-This plugin keeps the same harness, session model and UI, and removes the parts
-a conversation does not need.
-
-## Measured
-
-A fresh session with one message ("say hi in one sentence") on a desktop install
-that has several other plugins loaded:
+A minimal, **tool-free, low-token** `Chat` mode for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH): same harness, same sessions and UI — just without what an everyday conversation does not need.
 
 **Standard mode (36K tokens / ¥0.0361)**
 
@@ -50,274 +24,89 @@ that has several other plugins loaded:
 | `temperature` | not sent | **1.0** | **1.0** |
 | input tokens | 35,967 | **1,880** | **1,842** |
 
-About 19x fewer input tokens, and no `"tools": []` either — the whole field is
-omitted. The two screenshots above are that same greeting in both modes
-(36K vs 1.9K).
-
-> The numbers come from one desktop install with a fair number of other plugins
-> (they are the tools being masked, not tools this preset declares). Absolute
-> values vary with the deployment; the ratio and the absent `tools` field do not.
-
-> Note: engines from `0.2.2-rc.5` on still emit an empty `"tools": []` (about
-> 15 bytes, no schemas) when nothing is registered — that array is produced by
-> the engine's `dsh-llm` layer and cannot be removed by a plugin. It carries no
-> token cost worth measuring and does not change the tool-free behaviour.
-## What it does
-
-- **Zero tools.** The preset declares no `tool-*` rows, and the plugin masks
-  every global tool other plugins register at the preset scope (`tools.restrict`),
-  then re-masks each agent on its first step for tools registered later. The
-  request therefore has no `tools` field at all — not an empty array, no field.
-  Without the mask a preset alone cannot unregister tools that a deployment-level
-  plugin contributes.
-- **No workflow prompt.** One `complete` system-prompt section replaces the
-  whole assembly, including the harness identity and every engineering section.
-- **No environment injection.** Runtime context is suppressed, so no OS, git,
-  cwd or file-tree snapshot is added.
-- **Web-like tone.** The default `web-tone` prompt is an original prompt under
-  80 tokens: natural, warm, willing to disagree, honest about uncertainty, no
-  canned service phrases. `empty` removes the system prompt entirely.
-- **Local slash commands.** `/tone`, `/temp`, `/think`, `/web`, `/chat savings` and
-  `/chat save` run locally: no tokens, no model round trip, no effect on other
-  sessions. `concise` answers first and uses one sentence when one is enough;
-  `creative` brings more associations and a higher 1.25–1.3 temperature.
-  `/web on` is the only way to add the `web_search` and `web_fetch` schemas;
-  every other tool stays masked. `/chat savings` estimates the input tokens this
-  session saved against the Standard baseline.
-- **Chat-friendly sampling.** Non-thinking requests default to `temperature: 1`
-  (configurable 0–1.5), instead of the flat `0` that coding modes like.
-- **Thinking stays available.** Pick a thinking level in the UI as usual; the
-  plugin then stops sending a temperature, because thinking requests should not
-  carry one.
-- **Long conversations still compact.** The preset includes the standard
-  compaction backend, and it only runs when the context window is under
-  pressure; ordinary turns get no extra system text.
-- **No default preset is modified.** The plugin inserts new loader/preset ids
-  (`preset-chat` / `chat`); Standard, PTC, Minimal, Creative and any other presets you have installed are untouched.
-
-### How thinking levels reach the API
-
-The DeepSeek Messages protocol has two thinking states, and each level maps onto them:
-
-| Level | Request fields |
-| --- | --- |
-| `off` | `thinking: { type: "disabled" }`, no `output_config` |
-| `low` / `high` / `max` | `thinking: { type: "enabled" }` plus `output_config: { effort: "low" \| "high" \| "max" }` |
-
-With nothing recorded the adapter defaults to `high`, which is the DeepSeek web
-client's deep-thinking level, so `/think on` matches that switch. A `temperature`
-is only sent in the `off` level: the harness rejects a temperature alongside
-thinking, and the plugin drops it for you.
-### Slash commands
-
-Type them in the composer. Everything happens locally: no tokens, no extra
-request, and no effect on other sessions.
-
-| Command | Effect |
-| --- | --- |
-| `/chat` | Show this session's tone, temperature, web switch and usage |
-| `/chat help` | List every command |
-| `/tone web\|empty\|concise\|creative` | Switch this session's tone |
-| `/tone custom <text>` | Use a short custom system prompt for this session |
-| `/temp auto\|off\|0-1.5` | `auto` follows the tone default (creative uses 1.28), `off` sends no temperature, a number pins it |
-| `/think on\|off\|low\|high\|max` | Thinking toggle: `on` = `high` (the DeepSeek web deep-thinking level), `off` disables it; `low`/`max` fine-tune the effort; requests stop sending a temperature while thinking is on |
-| `/think auto` | Drop this session's thinking pin and fall back to the adapter default (`high` when nothing is recorded) |
-| `/web on\|off` | Allow `web_search` / `web_fetch`; off is the default and the request body has no `tools` field |
-| `/chat savings` | Estimate the input tokens this session saved against the Standard baseline (35,967) |
-| `/chat save` | Persist tone, temperature and the web switch into `~/.dsh/chat-mode.json` |
-
-`/web on` adds the `web_search` and `web_fetch` schemas: the request body grows
-from 16,230 to 18,050 bytes, about **+455 input tokens**. Chat ships its own
-isolated `web` runtime pinned to `deepseek-official` (model-token billed server
-search, no per-call Search API fee), so there is nothing to change globally:
-Standard and your other modes keep your own search settings.
-
-Switches apply to the current session only and live in memory: a DSH restart
-falls back to the configured defaults. Run `/chat save` to keep a choice.
+About **19x fewer input tokens**, with no tool schemas in the request at all. Numbers come from one desktop install with several plugins loaded; absolute values vary, the ratio and the absent `tools` field do not. **No default preset is modified**: Standard, PTC, Minimal, Creative and any preset you installed stay untouched.
 
 ## Install
 
-### CLI / other DSH clients
+**Desktop app**: open **Plugins → Add plugin** and enter
+
+```
+github:XiaoFeng7418/dsh-plugin-chat-mode
+```
+
+**CLI / other DSH clients**:
 
 ```sh
 dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode
 ```
 
-Install the packaged tarball from a GitHub Release:
+Then start a new chat and pick **Chat (lightweight)** in the mode switcher.
+
+<details>
+<summary>Other install paths (release tarball / pinned version / local checkout)</summary>
 
 ```sh
-dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.1.3/dsh-plugin-chat-mode-0.1.3.tgz
-```
+# packaged release tarball (no source build)
+dsh plugin --profile <profile> add https://github.com/XiaoFeng7418/dsh-plugin-chat-mode/releases/download/v0.2.0/dsh-plugin-chat-mode-0.2.0.tgz
 
-Pin a commit for reproducibility:
+# pin a release
+dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.2.0
 
-```sh
-dsh plugin --profile <profile> add github:XiaoFeng7418/dsh-plugin-chat-mode#v0.1.3
-```
-
-For the Desktop app, open **Plugins → Add plugin** and install the same GitHub
-spec. (`--profile desktop` is owned by the Desktop app, so the CLI refuses it by
-design; use the app's plugin page there.)
-
-Local development, no publish step:
-
-```sh
+# local development (links the directory into the profile)
 dsh plugin --profile <profile> add /absolute/path/to/dsh-plugin-chat-mode
 ```
 
-Then start (or restart) DSH, open a new chat, and choose **Chat** in the mode
-switcher.
+</details>
 
-Requirements: a DSH build whose preset roster supports the Web/Desktop UI
-(this plugin targets the `0.2.x` bundle layout). It is plain ESM with no
-runtime dependencies and no native code.
+## Slash commands
+
+Type them in the composer. Everything runs **locally**: no tokens, no extra request, no effect on other sessions.
+
+| Command | Effect |
+| --- | --- |
+| `/chat` | Show this session's tone, temperature, web switch and usage |
+| `/chat savings` | Estimate input tokens saved this session against the Standard baseline |
+| `/chat save` | Persist the current choice into `~/.dsh/chat-mode.json` for new sessions |
+| `/tone web\|empty\|concise\|creative` | Natural chat / no system prompt / terse / brainstorm |
+| `/tone custom <text>` | Use a short custom system prompt for this session |
+| `/think on\|off\|low\|high\|max` | Deep thinking: `on` = `high` (the web client's level); no temperature is sent while it is on |
+| `/web on\|off` | Allow the `web_search` / `web_fetch` tools (off by default) |
+| `/temp auto\|off\|0-1.5` | Temperature: follow the tone default / never send / pin a value |
+
+Switches live in memory for the current session only; a DSH restart falls back to the configured defaults — run `/chat save` to keep a choice.
+
+## On DSH Go (Android)
+
+1. In the web UI open **Plugins → +**, enter `github:XiaoFeng7418/dsh-plugin-chat-mode` (or a release tarball / a local directory on the phone), install, then tap "enable".
+2. The native UI only offers DSH Go's own modes; tap **Switch to web interface** in the sidebar and pick **Chat (lightweight)** in the new-session mode picker.
+3. For casual chat you can temporarily disable **`agent-teams`** in the plugin manager to drop its extra tools and context. Web search was verified on-device (app 1.1.0 / 1.2.0, bundled engine `0.2.2-rc.1`): `/web on` adds about **+455 input tokens** and uses `deepseek-official` server search, billed as model tokens only.
+
+See [TECHNICAL_en](docs/TECHNICAL_en.md) for details and known differences.
 
 ## Configuration
 
-Defaults live on the `chat-mode` row in [`cordis.patch.yml`](cordis.patch.yml):
-
-```yaml
-- id: chat-mode
-  name: dsh-plugin-chat-mode
-  config:
-    promptMode: web-tone
-    temperature: 1
-    defaultThinking: off
-```
-
-Preset sub-rows are intentionally **read-only** in the Web plugin inventory:
-DSH shows them as "provided by an agent preset" instead of offering a form. To
-tune this mode without editing the installed profile patch, write a small user
-file:
-
-`$DSH_HOME/chat-mode.json` (`~/.dsh/chat-mode.json` by default)
+Preset sub-rows are **read-only** in the settings UI, so tune the mode with `~/.dsh/chat-mode.json` (`$DSH_HOME/chat-mode.json`):
 
 ```json
 {
   "promptMode": "web-tone",
-  "temperature": 1,
+  "temperature": 1.0,
   "defaultThinking": "off"
 }
 ```
 
-The file overrides the row config, and invalid values are warned about and
-ignored rather than breaking the preset.
+Priority: built-in defaults → row config in `cordis.patch.yml` → this file. Full option table, `traceFile` diagnostics and request shape live in [TECHNICAL_en](docs/TECHNICAL_en.md); changes per version are in [CHANGELOG](CHANGELOG.md).
 
-| Option | Values | Default | Effect |
-| --- | --- | --- | --- |
-| `promptMode` | `web-tone`, `empty`, `concise`, `creative`, `custom` | `web-tone` | `empty` sends no system prompt at all; `concise` answers first; `creative` brainstorms and polishes; `custom` uses `customPrompt`. |
-| `customPrompt` | string | `""` | Used when `promptMode` is `custom`. An empty value also means "no system prompt". |
-| `creativeTemperature` | number in `0`–`1.5` | `1.28` | Used by the `creative` tone while the temperature is still `auto`. |
-| `webSearch` | `true`, `false` | `false` | Allow the web tools by default; `true` equals `/web on` for new sessions. |
-| `webSearchProvider` | `deepseek-official`, `inherit` | `deepseek-official` | Search channel of the isolated preset runtime; `inherit` uses your global `web` settings instead. |
-| `savingsBaseline` | integer | `35967` | Standard input-token baseline used by `/chat savings`. |
-| `temperature` | number `0`–`1.5`, or `null` | `1` | Sent only on non-thinking requests. `null` never sends one. |
-| `defaultThinking` | `off`, `follow-ui` | `off` | `off` starts the first turn of a new chat without thinking unless a level is already recorded; `follow-ui` keeps the adapter default. |
-| `traceFile` | path or `null` | `null` | Opt-in diagnostic: append JSON lines for the mount, the tool mask, the thinking decision and each resolved model call. |
+## Development
 
-### About the defaults
-
-- `defaultThinking: off` applies to the first turn of a chat that has no recorded
-  reasoning level, and only on DeepSeek routes (other providers may reject the
-  `off` effort). A restored or continued session keeps whatever it recorded,
-  and any level you pick in the UI later wins.
-- The plugin observes the reasoning level on every request, so turning thinking
-  on in the UI immediately stops temperature injection for that chat.
-- Temperature has no first-class setting in the current harness API, so the
-  plugin sets it through the `agent/request` waterfall. That hook is marked
-  deprecated upstream ("no replacement API" for per-request controls); if a
-  future DSH release removes it, this option will simply become a no-op instead
-  of breaking chat.
-
-## Request shape
-
-Approximate for the same three-word message, before conversation history:
-
-| Field | Standard mode | Chat mode (`web-tone`) |
-| --- | --- | --- |
-| `system` | several KB of workflow rules + environment snapshot | ~250 characters of tone guidance |
-| `tools` | ~20 schemas | **absent** |
-| `thinking` | `enabled`, effort `high` by default | `disabled` by default |
-| `temperature` | absent (provider default) | `1` |
-| `max_tokens` | the harness' configured cap | the same cap (this plugin does not change it) |
-
-With `promptMode: "empty"`, the `system` field is absent as well.
-
-### Verifying it yourself
-
-Set `traceFile` to a path outside the repository:
-
-```json
-{ "traceFile": "~/.dsh/chat-mode-trace.jsonl" }
+```sh
+pnpm install
+pnpm run typecheck
+pnpm test
 ```
 
-Each line is a small JSON object: one for the mount (`via: apply`), one for the
-global-tool mask (`via: maskGlobalTools`), one when a first turn decides the
-reasoning level (`via: agent/inbox/claimed`), and one per resolved model call
-(`via: agent/request`) with provider, model, effort, temperature and token cap.
-Message bodies and system-prompt text are deliberately not recorded.
+Re-mount after changes: `dsh plugin --profile <name> add /absolute/path/to/dsh-plugin-chat-mode` (re-installing the same path in the desktop app asks for a restart; installing from a fresh directory reloads the running app).
 
-For the request itself, a session log already carries the authoritative pieces:
-`request/header` (model, tools and controls) and `system/message` (the system
-prompt). Together with a trace line they show the complete shape without
-recording any conversation content.
+## Credits and license
 
-## Compatibility
-
-- DSH Desktop / `dsh web`: tested against the current Desktop bundle.
-- **Android DSH Go: verified on-device (1.1.0, bundled engine `0.2.2-rc.1`, which DSH Go pins for stability).**
-  Install it from the web UI under Plugins → `+` (GitHub URL, release tarball, or
-  a local directory path), enable it, then pick **Chat (lightweight)** from the
-  preset picker in the *web* interface — see the next section.
-- No native dependencies, no platform checks beyond none, no build step.
-
-### On DSH Go (Android)
-
-1. In DSH Go open Plugins → `+` in the sidebar, enter
-   `github:XiaoFeng7418/dsh-plugin-chat-mode`, or the download URL of
-   `dsh-plugin-chat-mode-0.1.3.tgz` from the `v0.1.3` release, or a local
-   directory path that exists on the phone, install, then tap "enable".
-2. The **native UI only offers DSH Go's own modes** (Work / Companion / Tavern)
-   and does not show DSH presets. Tap "switch to web interface" in the sidebar,
-   then pick **Chat (lightweight)** from the preset picker on a new session.
-3. What differs, honestly:
-   - Desktop (engine `rc.3` and newer): no `tools` field, a 61-character system
-     prompt, about **1.9K input tokens** per short turn.
-   - The `rc.1` engine bundled in DSH Go: the system prompt takes effect and the
-     request goes through the same no-tools path, but **a few context blocks or
-     tools injected by other global plugins may still appear** (tools registered
-     by other plugins, runtime reminders), measured at about **3.9K input
-     tokens**. This should converge once DSH Go ships a newer engine; with only
-     this plugin installed the difference is negligible.
-   - **Web search was verified on an actual Android DSH Go device** (app 1.1.0 /
-     1.2.0, bundled engine `0.2.2-rc.1`): after `/web on`, a time-sensitive
-     question is answered through `deepseek-official` server-side search and the
-     citations render normally (for example "what is the latest Gemini model").
-     Turning it on adds about **+455 input tokens** per request (only the
-     `web_search` and `web_fetch` schemas); with it off the request carries no
-     web tools at all.
-4. If you want the phone to feel as lean as the desktop:
-   - On `rc.1` those leftover nine tools (`list_agents`, `send_message`,
-     `wait_agent`, `team_task_*`, …) are registered by the **Agent Teams /
-     `agent-teams`** plugin on **each agent's own scope**. `tools.restrict` only
-     removes **global** registrations by design, so this plugin cannot mask them
-     there (on desktop `rc.3+` the same tools are global, which is why masking
-     works).
-   - Practical tip: if a casual chat does not need multi-agent collaboration,
-     temporarily disable **`agent-teams`** in DSH Go's plugin manager (and any
-     other global plugin you do not need that injects context), and those nine
-     tools disappear — close to the desktop experience. Once DSH Go ships an
-     `rc.3+` engine, no manual disabling is needed.
-
-
-## Credits
-
-- [deepseek-ai/dsh](https://github.com/deepseek-ai/dsh) — the harness this
-  plugin extends, and the source of the preset/bundle conventions used here.
-- [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) — the open
-  web front end whose request habits (a `thinking` type, no explicit
-  temperature) informed the parameter defaults.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+Preset/bundle conventions, `tools.restrict` and the `agent/request` hook come from [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness); request-shape conventions were informed by [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). Code is [MIT](LICENSE).
