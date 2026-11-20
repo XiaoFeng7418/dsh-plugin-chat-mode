@@ -88,6 +88,21 @@ effort = options.reasoningEffort
 - 插件每次请求都会读取当前档位，所以在界面里打开思考后，它立刻停止注入 `temperature`。
 - 会话内切换只保存在内存；DSH 重启回到配置文件默认值，`/chat save` 才会持久化。
 
+## 客户端半（v0.3.0 的输入框按钮）
+
+浏览器侧不能直接 `import` 插件源码：宿主把 `dsh.client` 声明的包拼成 **classic script**（`document.createElement('script')`，不是 `type="module"`），脚本必须自己调用 `window.__ModuleLoader__.load({ id, factory })` 注册一个工厂；工厂第一次被 materialize 时执行，`require('react')` 由浏览器的模块表提供，所以无需打包也能写。
+
+实现要点：
+
+- `client.js` 全文是 classic script，没有顶层 `import` / `export`（有的话整段语法错误、槽位永远为空）。
+- 客户端半只认 **Loader 里的真实行**；preset 子行不在其中，所以 `cordis.patch.yml` 额外加了一条根级的 `chat-mode-client` 行（`config.clientOnly: true`），宿主半见到这个标记会立刻返回，避免与 preset 行重复注册。
+- 挂载点：`ctx.slots.inject('conversation.input.right', () => ctx.slots.register({ name, id, order, inject(sessionId) { … } }, Component))`；`inject` 是拿会话级数据的入口。
+- 「深度思考」读 `modelDirectories.directoryFor(sessionId).store`（与顶部模型胶囊同一 store，天然双向同步），点击走 `directory.select({ …, reasoningEffort })`。
+- 「联网」走 `ctx.remote.commands.execute(sessionId, '/web on' | '/web off', [])`，等价于本地命令、不产生模型请求；同时用 `localStorage` 记住开关意图，因为宿主没有把「本会话是否放行联网」投影给客户端。
+- 用 `sessions.binding(id).session.projections.faceOf('agentPreset')` 判断当前 preset，仅 `chat` 时渲染；其它模式返回 `null`，不污染工作模式。
+
+已知差异：如果同一个会话在另一个客户端里执行了 `/web on|off`，本按钮要到下一次 `command/executed` 或重开页面才同步；`thinking` 则始终与模型 store 同步。
+
 ## 为什么预设子插件在 UI 里只读
 
 DSH 的 settings 表单只覆盖「active、可唯一寻址的 profile entry」的 volatile 字段；preset 子行属于预设定义的一部分，插件清单里显示为「由 agent preset 提供」，不提供编辑表单——这是为了避免一个模式的行为被本地改动悄悄覆盖。因此调参走用户覆盖文件，而不是在界面上改 preset 行。

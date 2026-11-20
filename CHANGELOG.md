@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Composer toggles** in the Chat preset: a "Think" switch (`off` <-> `high`)
+  and a "Web" switch (`/web on` / `/web off`). They render only while the
+  session runs under the `chat` preset, share the session state with the slash
+  commands and the model chip, and click through `ctx.remote.commands.execute`,
+  so a toggle never costs a model request.
+- A `clientOnly` root patch row and a hand-written classic-script `client.js`
+  that registers through `window.__ModuleLoader__` (no build step for users).
+- Static client checks: classic-script shape, module id, slot id, preset gate,
+  command plumbing, and the root row wiring.
+
+### Fixed
+
+- The host half now returns immediately for the `clientOnly` row, so mounting
+  the client half cannot register the preset twice.
 ## [0.2.0] - 2026-11-20
 
 ### Added

@@ -75,6 +75,15 @@ Type them in the composer. Everything runs **locally**: no tokens, no extra requ
 
 Switches live in memory for the current session only; a DSH restart falls back to the configured defaults — run `/chat save` to keep a choice.
 
+### Composer toggles (v0.3.0)
+
+In **Chat (lightweight)** mode two switches appear to the right of the composer, the same way the web client does it:
+
+- **Think**: highlighted while the level is `low` / `high` / `max`; a click flips between `off` and `high`;
+- **Web**: the button for `/web on` / `/web off`; only then are the two web tools offered.
+
+Both buttons read and write the same per-session state as the slash commands and the model chip, so typing `/think off` (or picking another reasoning level) updates them immediately, and clicking one is equivalent to running the command — no extra model request. They disappear in Standard / PTC / Minimal and other presets, so work modes keep their composer untouched.
+
 ## On DSH Go (Android)
 
 1. In the web UI open **Plugins → +**, enter `github:XiaoFeng7418/dsh-plugin-chat-mode` (or a release tarball / a local directory on the phone), install, then tap "enable".

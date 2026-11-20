@@ -12,6 +12,14 @@
 # the `chat-mode` row masks them on each agent's scope as well; see README.
 # Everything configurable lives on the single `chat-mode` row.
 - insert:
+    # The browser half is discovered by the client-module scanner from an
+    # *active Loader row* whose package declares `dsh.client`. Preset child rows
+    # live in the preset's own tree, so this root row publishes `client.js`
+    # without building a second chat agent (`clientOnly` makes `apply` a no-op).
+    - id: chat-mode-client
+      name: dsh-plugin-chat-mode
+      config:
+        clientOnly: true
     - id: preset-chat
       name: '@deepseek-ai/dsh-agent-preset'
       config:

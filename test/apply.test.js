@@ -424,3 +424,13 @@ test('/think strips a temperature the harness persisted in the request header', 
   const off = await request({ agent: offAgent.agent }, async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100, temperature: 1 }))
   assert.equal(off.temperature, 1, 'non-thinking turns keep the header temperature')
 })
+
+test('the client-only patch row is a no-op in the host plane', () => {
+  const h = harness({ clientOnly: true }, { presetNames: ['bash', 'list_agents'] })
+  apply(h.ctx, { clientOnly: true })
+
+  assert.equal(h.sections.length, 0, 'no prompt section is registered twice')
+  assert.equal(h.listeners.size, 0, 'no agent listener is added by the client row')
+  assert.equal(h.commands.length, 0, 'commands stay owned by the preset row')
+  assert.equal(h.registeredTools.length, 0, 'web tools stay owned by the preset row')
+})

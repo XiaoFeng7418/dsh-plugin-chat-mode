@@ -88,6 +88,21 @@ For the request itself, a session log already carries the authoritative pieces: 
 - The plugin reads the level on every request, so turning thinking on in the UI immediately stops temperature injection.
 - Session switches live in memory; a DSH restart falls back to the configuration file, and `/chat save` persists them.
 
+## The client half (the v0.3.0 composer toggles)
+
+The browser cannot `import` plugin source: the host turns every package that declares `dsh.client` into a **classic script** (`document.createElement('script')`, not `type="module"`), so the file has to call `window.__ModuleLoader__.load({ id, factory })` itself. The factory runs the first time the module is materialised; `require('react')` comes from the browser module table, which is why no build step is needed.
+
+Implementation notes:
+
+- `client.js` is a classic script with no top-level `import` / `export` (either would be a syntax error and leave the slot empty forever).
+- Only **real loader rows** are scanned; preset child rows are not. `cordis.patch.yml` therefore carries one extra root row, `chat-mode-client` (`config.clientOnly: true`), and the host half returns immediately for that flag so the preset never registers twice.
+- Mount point: `ctx.slots.inject('conversation.input.right', () => ctx.slots.register({ name, id, order, inject(sessionId) { … } }, Component))`; `inject` is how a slot component receives session data.
+- **Think** reads `modelDirectories.directoryFor(sessionId).store` — the same store as the model chip, hence the two stay in sync — and clicks go through `directory.select({ …, reasoningEffort })`.
+- **Web** runs `ctx.remote.commands.execute(sessionId, '/web on' | '/web off', [])`, i.e. the local command, so a click never costs a model request. The button also remembers the intent in `localStorage`, because the host does not project "web allowed for this session" to the client.
+- The component renders only while `sessions.binding(id).session.projections.faceOf('agentPreset')` is `chat`; other presets get `null`, so work modes keep their composer.
+
+Known gap: if another client runs `/web on|off` in the same session, this button catches up on the next `command/executed` or page reload; thinking always tracks the model store.
+
 ## Why preset sub-rows are read-only in the UI
 
 DSH's settings forms only cover volatile fields of active, uniquely addressable profile entries. Preset sub-rows belong to the preset definition: the plugin inventory shows them as provided by an agent preset and offers no form, which keeps a mode's behaviour from being silently overridden by local edits. Tune the mode through the user file instead.

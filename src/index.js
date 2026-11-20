@@ -38,6 +38,10 @@ const SECTION_NAME = 'chat-mode:prompt'
  * @param {Record<string, unknown>} [config] Row config from `cordis.patch.yml`.
  */
 export function apply(ctx, config = {}) {
+  // The browser half is discovered from an *active Loader row* whose package
+  // declares `dsh.client`. The root row in `cordis.patch.yml` exists only to
+  // publish `client.js`; it must not build a second chat agent.
+  if (config.clientOnly === true) return
   const warn = (message) => {
     try {
       ctx.logger?.warn?.(`chat-mode: ${message}`)
