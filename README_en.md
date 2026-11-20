@@ -116,6 +116,8 @@ pnpm test
 
 Re-mount after changes: `dsh plugin --profile <name> add /absolute/path/to/dsh-plugin-chat-mode` (re-installing the same path in the desktop app asks for a restart; installing from a fresh directory reloads the running app).
 
+`client.js` is a client half: the Host derives its `rev` from the file timestamps and serves bundles as `immutable`. Any edit therefore needs a DSH restart (on desktop, quit the app completely, tray included) — a browser hard refresh is not enough.
+
 ## Credits and license
 
 Preset/bundle conventions, `tools.restrict` and the `agent/request` hook come from [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness); request-shape conventions were informed by [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo). Code is [MIT](LICENSE).

@@ -116,6 +116,8 @@ pnpm test
 
 改完重新挂载即可：`dsh plugin --profile <name> add /绝对路径/dsh-plugin-chat-mode`（桌面端同路径重装会提示重启，换新目录安装可让运行中的应用重新加载）。
 
+`client.js` 是客户端插件：宿主按文件时间戳算出 `rev`，bundle 以 `immutable` 缓存。改了它必须**重启 DSH**（桌面端要连托盘一起退出）才会生效，浏览器硬刷新不够。
+
 ## 致谢与许可
 
 插件机制、preset、`tools.restrict`、`agent/request` 钩子来自 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)；纯对话请求构造与思考模式开关的习惯参考了 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)。代码以 [MIT](LICENSE) 许可。

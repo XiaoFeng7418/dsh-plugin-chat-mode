@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-20
+
+### Changed
+
+- Activation motion now matches the DeepSeek chat web app: the icon rotates once
+  on a real off -> on transition (thinking 0 -> 180deg, 440ms
+  `cubic-bezier(0.22, 1, 0.36, 1)`; web -24 -> 0deg, 400ms) and simply eases its
+  colors back when switched off. The marker is derived from the previous render,
+  so a theme change or any other re-render never spins the icon again.
+- A click suppresses the hover hint until the pointer leaves the button, so the
+  bubble no longer covers the composer after toggling.
+
+### Fixed
+
+- **No more square black frame around the pills.** The buttons now own every
+  border, outline, appearance and tap-highlight property
+  (`appearance: none`, explicit `border-style/width/color`, `outline: none`,
+  `box-shadow: none`) under a container-scoped, element-qualified selector, so
+  the Electron host reset can no longer paint its own rectangular border. Only
+  `:focus-visible` (keyboard) shows a soft 2px rounded glow; a mouse click leaves
+  a clean pill.
+
+### Notes
+
+- Client halves are served with a content revision taken from the file's
+  timestamps, and bundles ship with `cache-control: immutable`. Editing
+  `client.js` therefore needs a Host restart to recompute the revision — a
+  browser hard refresh alone is not enough, and on desktop DSH has to exit
+  completely (including the tray) before relaunching.
+
 ## [0.3.1] - 2026-11-20
 
 ### Added

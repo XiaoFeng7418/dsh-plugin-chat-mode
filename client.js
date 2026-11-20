@@ -36,12 +36,14 @@ window.__ModuleLoader__.load({
 .chat-mode-toggles {
   --cm-accent: #4d6bfe;
   --cm-label: #3555e0;
+  --cm-border: rgba(15, 17, 20, 0.14);
   --cm-soft: rgba(77, 107, 254, 0.12);
   --cm-soft: color-mix(in srgb, var(--cm-accent) 12%, transparent);
   --cm-soft-hover: rgba(77, 107, 254, 0.18);
   --cm-soft-hover: color-mix(in srgb, var(--cm-accent) 18%, transparent);
   --cm-hover: rgba(15, 17, 20, 0.06);
   --cm-glow: rgba(77, 107, 254, 0.22);
+  --cm-focus: rgba(77, 107, 254, 0.25);
   --cm-tip-bg: #ffffff;
   --cm-tip-border: rgba(15, 23, 42, 0.08);
   --cm-tip-text: #2b2f36;
@@ -53,17 +55,25 @@ window.__ModuleLoader__.load({
 .chat-mode-toggles[data-theme='dark'] {
   --cm-accent: #7c97ff;
   --cm-label: #a0b4ff;
+  --cm-border: rgba(255, 255, 255, 0.18);
   --cm-soft: rgba(124, 151, 255, 0.16);
   --cm-soft: color-mix(in srgb, var(--cm-accent) 20%, transparent);
   --cm-soft-hover: rgba(124, 151, 255, 0.24);
   --cm-soft-hover: color-mix(in srgb, var(--cm-accent) 28%, transparent);
   --cm-hover: rgba(255, 255, 255, 0.08);
   --cm-glow: rgba(124, 151, 255, 0.28);
+  --cm-focus: rgba(124, 151, 255, 0.32);
   --cm-tip-bg: #23262d;
   --cm-tip-border: rgba(255, 255, 255, 0.10);
   --cm-tip-text: #e8eaef;
 }
-.chat-mode-toggle {
+/*
+ * Selectors are deliberately container-scoped and doubled (element + class) so
+ * the Electron host's own button reset cannot repaint a square black border
+ * or an outline on top of the pill: every border/outline/appearance property is
+ * declared here explicitly with the same or higher specificity.
+ */
+.chat-mode-toggles button.chat-mode-toggle {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
@@ -71,10 +81,17 @@ window.__ModuleLoader__.load({
   justify-content: center;
   gap: 4px;
   height: 34px;
+  margin: 0;
   padding: 0 12px;
   border-radius: 18px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.32));
+  border-style: solid;
+  border-width: 1px;
+  border-color: var(--cm-border);
+  appearance: none;
+  -webkit-appearance: none;
   background-color: transparent;
+  background-image: none;
+  box-shadow: none;
   color: var(--dsw-alias-label-secondary, #4a4f57);
   font: inherit;
   font-size: 13px;
@@ -83,6 +100,7 @@ window.__ModuleLoader__.load({
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
   outline: none;
   transition:
     background-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -91,34 +109,72 @@ window.__ModuleLoader__.load({
     box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.chat-mode-toggle:hover:not(:disabled) {
+.chat-mode-toggles button.chat-mode-toggle::-moz-focus-inner {
+  border: 0;
+  padding: 0;
+}
+.chat-mode-toggles button.chat-mode-toggle:hover:not(:disabled) {
   background-color: var(--cm-hover);
 }
-.chat-mode-toggle:active:not(:disabled) {
-  transform: scale(0.95);
+.chat-mode-toggles button.chat-mode-toggle:active:not(:disabled) {
+  transform: scale(0.96);
   transition-duration: 100ms;
 }
-.chat-mode-toggle:focus-visible {
-  box-shadow: 0 0 0 3px var(--cm-glow);
+/* A mouse click must never leave a square outline; only keyboard focus gets one. */
+.chat-mode-toggles button.chat-mode-toggle:focus {
+  outline: none;
+  box-shadow: none;
 }
-.chat-mode-toggle[aria-pressed='true'] {
+.chat-mode-toggles button.chat-mode-toggle:focus-visible {
+  outline: none;
+  border-color: var(--cm-accent);
+  box-shadow: 0 0 0 2px var(--cm-focus);
+}
+.chat-mode-toggles button.chat-mode-toggle[aria-pressed='true'] {
   background-color: var(--cm-soft);
   border-color: var(--cm-accent);
   color: var(--cm-label);
-  box-shadow: 0 0 0 2px var(--cm-glow);
+  box-shadow: none;
 }
-.chat-mode-toggle[aria-pressed='true']:hover:not(:disabled) {
+.chat-mode-toggles button.chat-mode-toggle[aria-pressed='true']:hover:not(:disabled) {
   background-color: var(--cm-soft-hover);
 }
-.chat-mode-toggle[aria-pressed='true'] svg {
-  animation: chat-mode-icon-pop 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+/*
+ * One-shot activation motion: the class is attached only for the render that
+ * follows an off -> on transition, so a plain re-render never rotates the icon
+ * and turning a toggle off only eases the colors back.
+ */
+.chat-mode-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  transform-box: fill-box;
 }
-@keyframes chat-mode-icon-pop {
-  0% { transform: scale(0.72) rotate(-8deg); opacity: 0.6; }
-  60% { transform: scale(1.08) rotate(2deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+.chat-mode-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transform-origin: center;
+  transform-box: fill-box;
 }
-.chat-mode-toggle::after {
+.chat-mode-toggle[data-spin='think'] .chat-mode-icon svg {
+  animation: chat-mode-spin-think 440ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat-mode-toggle[data-spin='web'] .chat-mode-icon svg {
+  animation: chat-mode-spin-web 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes chat-mode-spin-think {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(180deg); }
+}
+@keyframes chat-mode-spin-web {
+  from { transform: rotate(-24deg); }
+  to { transform: rotate(0deg); }
+}
+.chat-mode-toggles .chat-mode-toggle::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 8px);
@@ -140,37 +196,39 @@ window.__ModuleLoader__.load({
   transition: opacity 160ms ease, transform 160ms ease;
   transition-delay: 0ms;
 }
-.chat-mode-toggle:hover::after {
+.chat-mode-toggles .chat-mode-toggle:hover::after {
   opacity: 1;
   transform: translate(-50%, 0);
   transition-delay: 380ms;
 }
-.chat-mode-toggle:active::after,
-.chat-mode-toggle:focus-visible::after {
+.chat-mode-toggles .chat-mode-toggle:active::after,
+.chat-mode-toggles .chat-mode-toggle:focus-visible::after {
   opacity: 0;
   transform: translate(-50%, 4px);
   transition-delay: 0ms;
 }
-.chat-mode-toggle:disabled {
+/*
+ * After a click the bubble stays suppressed until the pointer leaves the
+ * button, so it never hangs over the composer while the user keeps working.
+ */
+.chat-mode-toggles .chat-mode-toggle[data-tooltip-muted='true']::after {
+  content: none;
+}
+.chat-mode-toggles .chat-mode-toggle:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.chat-mode-toggle:disabled::after {
+.chat-mode-toggles .chat-mode-toggle:disabled::after {
   content: none;
 }
-.chat-mode-toggle svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
 @media (prefers-reduced-motion: reduce) {
-  .chat-mode-toggle,
-  .chat-mode-toggle::after,
-  .chat-mode-toggle svg {
+  .chat-mode-toggles button.chat-mode-toggle,
+  .chat-mode-toggles button.chat-mode-toggle::after,
+  .chat-mode-toggle .chat-mode-icon svg {
     transition: none !important;
     animation: none !important;
   }
-  .chat-mode-toggle:active:not(:disabled) {
+  .chat-mode-toggles button.chat-mode-toggle:active:not(:disabled) {
     transform: none;
   }
 }
@@ -263,8 +321,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One toggle button; `active` paints the on state and `tooltip` feeds the
-     * delayed CSS bubble (no native `title`, whose black popup appears at 0ms).
+     * One toggle button. `active` paints the on state, `tooltip` feeds the
+     * delayed CSS bubble (no native `title`, whose black popup appears at 0ms),
+     * `spin` only exists on the render that follows an off -> on transition and
+     * `muted` keeps the bubble away after a click until the pointer leaves.
      */
     function Toggle(props) {
       return React.createElement(
@@ -273,14 +333,50 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: props.className,
           'data-tooltip': props.tooltip,
+          'data-tooltip-muted': props.muted === true ? 'true' : 'false',
+          'data-spin': props.spin === null ? undefined : props.spin,
           'aria-description': props.tooltip,
           'aria-pressed': props.active,
           disabled: props.disabled === true,
           onClick: props.onClick,
+          onPointerDown: props.onPointerDown,
+          onPointerLeave: props.onPointerLeave,
+          onBlur: props.onBlur,
         },
-        props.icon,
+        React.createElement('span', { className: 'chat-mode-icon', key: props.iconKey }, props.icon),
         React.createElement('span', null, props.label),
       )
+    }
+
+    /**
+     * One-shot activation marker.
+     *
+     * The icon may rotate only on a real off -> on transition, so the marker is
+     * derived from the previous render's value and cleared again shortly after.
+     * The sequence number keys the icon wrapper so a second activation restarts
+     * the CSS animation even though the attribute value is unchanged, and a
+     * plain re-render (theme change, store update, parent render) never sets it.
+     */
+    function useActivationSpin(active, kind) {
+      const previous = React.useRef(active)
+      const [spin, setSpin] = React.useState(null)
+      const [sequence, setSequence] = React.useState(0)
+
+      React.useEffect(() => {
+        if (previous.current === false && active === true) {
+          setSpin(kind)
+          setSequence((count) => count + 1)
+        }
+        previous.current = active
+      }, [active, kind])
+
+      React.useEffect(() => {
+        if (spin === null) return undefined
+        const timer = setTimeout(() => setSpin(null), kind === 'think' ? 470 : 430)
+        return () => clearTimeout(timer)
+      }, [spin, sequence, kind])
+
+      return { spin, iconKey: `${kind}-${sequence}` }
     }
 
     /** The two toggles, hidden unless this session runs the chat preset. */
@@ -290,9 +386,16 @@ window.__ModuleLoader__.load({
       const [web, setWeb] = React.useState(() => props.webState.get(props.sessionId) === true)
       const [busy, setBusy] = React.useState(false)
       const [theme, setTheme] = React.useState(() => detectTheme())
+      const [muted, setMuted] = React.useState({ think: false, web: false })
+
+      const mute = React.useCallback((key, value) => {
+        setMuted((current) => (current[key] === value ? current : { ...current, [key]: value }))
+      }, [])
 
       const effort = directory.current?.reasoningEffort
       const thinking = effort !== undefined && effort !== 'auto' && effort !== 'off'
+      const thinkSpin = useActivationSpin(thinking, 'think')
+      const webSpin = useActivationSpin(web, 'web')
 
       const toggleThinking = React.useCallback(async () => {
         const current = props.directoryStore.getSnapshot().current
@@ -349,6 +452,12 @@ window.__ModuleLoader__.load({
           active: thinking,
           tooltip: label('先思考后回答，解决推理问题', 'Think before answering to solve reasoning tasks'),
           onClick: toggleThinking,
+          onPointerDown: () => mute('think', true),
+          onPointerLeave: () => mute('think', false),
+          onBlur: () => mute('think', false),
+          muted: muted.think,
+          spin: thinkSpin.spin,
+          iconKey: thinkSpin.iconKey,
           className: 'chat-mode-toggle chat-toggle-thinking',
           icon: React.createElement(ThinkIcon, null),
           label: label('深度思考', 'DeepThink'),
@@ -357,6 +466,12 @@ window.__ModuleLoader__.load({
           active: web,
           tooltip: label('按需搜索网页', 'Search the web as needed'),
           onClick: toggleWeb,
+          onPointerDown: () => mute('web', true),
+          onPointerLeave: () => mute('web', false),
+          onBlur: () => mute('web', false),
+          muted: muted.web,
+          spin: webSpin.spin,
+          iconKey: webSpin.iconKey,
           disabled: busy,
           className: 'chat-mode-toggle chat-toggle-web',
           icon: React.createElement(GlobeIcon, null),
