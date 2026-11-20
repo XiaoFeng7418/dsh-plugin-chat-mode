@@ -289,6 +289,13 @@ recording any conversation content.
      by other plugins, runtime reminders), measured at about **3.9K input
      tokens**. This should converge once DSH Go ships a newer engine; with only
      this plugin installed the difference is negligible.
+   - **Web search was verified on an actual Android DSH Go device** (app 1.1.0 /
+     1.2.0, bundled engine `0.2.2-rc.1`): after `/web on`, a time-sensitive
+     question is answered through `deepseek-official` server-side search and the
+     citations render normally (for example "what is the latest Gemini model").
+     Turning it on adds about **+455 input tokens** per request (only the
+     `web_search` and `web_fetch` schemas); with it off the request carries no
+     web tools at all.
 4. If you want the phone to feel as lean as the desktop:
    - On `rc.1` those leftover nine tools (`list_agents`, `send_message`,
      `wait_agent`, `team_task_*`, …) are registered by the **Agent Teams /

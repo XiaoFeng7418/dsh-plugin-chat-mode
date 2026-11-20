@@ -409,3 +409,18 @@ test('/think keeps the temperature out of thinking requests even when /temp pinn
   const offNext = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100, temperature: 1 })
   assert.equal((await request({ agent: agent.agent }, offNext)).temperature, 0.8, 'non-thinking keeps the pinned temperature')
 })
+
+test('/think strips a temperature the harness persisted in the request header', async () => {
+  const h = harness({ temperature: 1 })
+  const request = h.listeners.get('agent/request')
+  // No `/temp` pin: the header value comes from the previous (non-thinking) turn.
+  const next = async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high', maxTokens: 100, temperature: 1 })
+  const agent = fakeAgent({ reasoningEffort: 'high' })
+
+  const thinking = await request({ agent: agent.agent }, next)
+  assert.equal('temperature' in thinking, false, 'thinking turns must not send a temperature at all')
+
+  const offAgent = fakeAgent({ reasoningEffort: 'off' })
+  const off = await request({ agent: offAgent.agent }, async () => ({ provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'off', maxTokens: 100, temperature: 1 }))
+  assert.equal(off.temperature, 1, 'non-thinking turns keep the header temperature')
+})

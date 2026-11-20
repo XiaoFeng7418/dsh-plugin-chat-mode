@@ -159,7 +159,16 @@ export function apply(ctx, config = {}) {
     }
     const accept = shouldSendTemperature(effort, temperature, resolved.temperature)
     trace?.({ ...traceLine, temperature: accept ? temperature : resolved.temperature ?? null })
-    if (!accept) return resolved
+    if (!accept) {
+      // Thinking requests must never carry a temperature. The harness persists
+      // the first request's temperature in the session header, so even the
+      // default (auto) path has to strip it once thinking is on.
+      if (effort !== 'off') {
+        const { temperature: _dropped, ...rest } = resolved
+        return rest
+      }
+      return resolved
+    }
     return { ...resolved, temperature }
   })
 
