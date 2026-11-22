@@ -54,6 +54,30 @@ export function apply(ctx, config = {}) {
   const trace = traceFile === null ? undefined : (/** @type {Record<string, unknown>} */ line) => writeTrace(traceFile, line, warn)
   const stateFor = (/** @type {any} */ agent) => stateOf(agent, options)
 
+  // Blank-session preset changes reuse the Agent scope. Own each mask so it
+  // can be replaced (restrictions intersect) and removed when leaving Chat.
+  /** @type {Map<any, () => void>} */
+  const agentMasks = new Map()
+  const releaseMask = (/** @type {any} */ agent) => {
+    agentMasks.get(agent)?.()
+    agentMasks.delete(agent)
+  }
+  const replaceMask = (/** @type {any} */ agent) => {
+    releaseMask(agent)
+    const dispose = stripTools(agent, warn, trace, stateFor)
+    if (typeof dispose === 'function') agentMasks.set(agent, dispose)
+  }
+  ctx.effect(() => () => {
+    for (const agent of agentMasks.keys()) releaseMask(agent)
+  }, 'chat-mode.agent-masks')
+  ctx.on('agent-preset/selected', (sessionId, preset) => {
+    if (preset === 'chat') return
+    for (const agent of agentMasks.keys()) {
+      if (agent?.session?.id === sessionId) releaseMask(agent)
+    }
+  })
+  ctx.on('agent/disposed', ({ agent }) => { releaseMask(agent) })
+
   trace?.({
     via: 'apply',
     promptMode: options.promptMode,
@@ -117,7 +141,7 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.on('agent/created', (payload) => {
-    stripTools(payload?.agent, warn, trace, stateFor)
+    replaceMask(payload?.agent)
   })
 
   // Keep masking on later steps too: a plugin that registers a tool lazily
@@ -125,7 +149,7 @@ export function apply(ctx, config = {}) {
   // step decision through: a waterfall listener that returns nothing would
   // replace the prepared step with `undefined`.
   ctx.on('agent/pre-step', (payload, next) => {
-    stripTools(payload.agent, warn, trace, stateFor)
+    replaceMask(payload.agent)
     return next()
   })
 
@@ -134,7 +158,7 @@ export function apply(ctx, config = {}) {
   // on runtimes that dispatch it (0.2.2-rc.3). On 0.2.2-rc.1 the event is not
   // dispatched; the pre-step fallback below then covers later turns instead.
   ctx.on('agent/inbox/claimed', (payload) => {
-    stripTools(payload?.agent, warn, trace, stateFor)
+    replaceMask(payload?.agent)
     if (options.defaultThinking === 'off') defaultToNonThinking(payload?.agent, payload?.turn, warn, trace)
   })
 
@@ -302,17 +326,17 @@ function maskGlobalTools(ctx, warn, trace) {
  */
 function applyScopeRestriction(tools, via, warn, trace, allow, allowEmptyFallback) {
   try {
-    tools.restrict({ allow: [...allow] })
+    const dispose = tools.restrict({ allow: [...allow] })
     trace?.({ via, mode: 'allow-own', allow: [...allow] })
-    return
+    return dispose
   } catch (error) {
     trace?.({ via: `${via}:allow-own-failed`, message: error instanceof Error ? error.message : String(error) })
   }
   if (!allowEmptyFallback || allow.length === 0) return
   try {
-    tools.restrict({ allow: [] })
+    const dispose = tools.restrict({ allow: [] })
     trace?.({ via, mode: 'allow-none' })
-    return
+    return dispose
   } catch (error) {
     trace?.({ via: `${via}:allow-none-failed`, message: error instanceof Error ? error.message : String(error) })
   }
@@ -328,15 +352,18 @@ function applyScopeRestriction(tools, via, warn, trace, allow, allowEmptyFallbac
   trace?.({ via, mode: 'deny-rest', known: known.length, deny })
   if (deny.length === 0) return
   try {
-    tools.restrict({ deny })
+    return tools.restrict({ deny })
   } catch {
+    /** @type {Array<() => void>} */
+    const disposers = []
     for (const name of deny) {
       try {
-        tools.restrict({ deny: [name] })
+        disposers.push(tools.restrict({ deny: [name] }))
       } catch {
         warn(`could not restrict tool "${name}"`)
       }
     }
+    return () => { for (const dispose of disposers) dispose() }
   }
 }
 
@@ -360,7 +387,7 @@ function stripTools(agent, warn, trace, stateOf) {
       return
     }
     const allow = stateOf(agent).web ? [...CHAT_TOOL_NAMES] : []
-    applyScopeRestriction(tools, 'stripTools', warn, trace, allow, true)
+    return applyScopeRestriction(tools, 'stripTools', warn, trace, allow, true)
   } catch (error) {
     trace?.({ via: 'stripTools:error', message: error instanceof Error ? error.message : String(error) })
     warn(`could not restrict tools: ${error instanceof Error ? error.message : String(error)}`)

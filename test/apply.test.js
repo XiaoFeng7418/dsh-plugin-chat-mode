@@ -23,6 +23,8 @@ function harness(config = {}, extra = {}) {
   const commands = []
   /** @type {Array<{ definition: any, options: any }>} */
   const registeredTools = []
+  /** @type {Array<() => void>} */
+  const cleanups = []
   let suppressed = 0
   process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'chat-mode-home-'))
   const presetNames = extra.presetNames ?? []
@@ -70,7 +72,8 @@ function harness(config = {}, extra = {}) {
       },
     },
     effect(run) {
-      run()
+      const cleanup = run()
+      if (typeof cleanup === 'function') cleanups.push(cleanup)
       return () => {}
     },
     on(name, listener) {
@@ -89,6 +92,7 @@ function harness(config = {}, extra = {}) {
   }
   return {
     sections, listeners, presetRestrictions, commands, registeredTools, run, suppressed: () => suppressed,
+    dispose: () => { for (const cleanup of cleanups.reverse()) cleanup() },
   }
 }
 
@@ -101,6 +105,8 @@ function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', re
   const selections = []
   /** @type {Array<{ deny?: readonly string[], allow?: readonly string[] }>} */
   const restrictions = []
+  /** @type {Set<{ deny?: readonly string[], allow?: readonly string[] }>} */
+  const activeRestrictions = new Set()
   /** @type {{ provider: string, model: string, reasoningEffort?: string }} */
   let selection = { provider, model, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
   const agent = {
@@ -123,12 +129,13 @@ function fakeAgent({ provider = 'deepseek-account', model = 'deepseek-flash', re
           if (rejectAllow && (filter.allow?.length ?? 0) > 0) throw new Error('allow not supported')
           if (rejectBatch && (filter.deny?.length ?? 0) > 1) throw new Error('reserved name')
           restrictions.push(filter)
-          return () => {}
+          activeRestrictions.add(filter)
+          return () => { activeRestrictions.delete(filter) }
         },
       },
     },
   }
-  return { agent, selections, restrictions }
+  return { agent, selections, restrictions, activeRestrictions }
 }
 
 /**
@@ -453,4 +460,58 @@ test('the client-only patch row is a no-op in the host plane', () => {
   assert.equal(h.listeners.size, 0, 'no agent listener is added by the client row')
   assert.equal(h.commands.length, 0, 'commands stay owned by the preset row')
   assert.equal(h.registeredTools.length, 0, 'web tools stay owned by the preset row')
+})
+
+
+test('leaving Chat releases only that session mask when the agent scope is reused', () => {
+  const h = harness()
+  const a = fakeAgent({ sessionId: 'switch-to-ptc' })
+  const b = fakeAgent({ sessionId: 'remain-in-chat' })
+  h.listeners.get('agent/created')({ agent: a.agent })
+  h.listeners.get('agent/created')({ agent: b.agent })
+  assert.equal(a.activeRestrictions.size, 1)
+  h.listeners.get('agent-preset/selected')('switch-to-ptc', 'ptc')
+  assert.equal(a.activeRestrictions.size, 0)
+  assert.equal(b.activeRestrictions.size, 1)
+  h.listeners.get('agent-preset/selected')('remain-in-chat', 'chat')
+  assert.equal(b.activeRestrictions.size, 1)
+})
+
+test('web toggles replace intersecting masks and later steps keep one active mask', async () => {
+  const h = harness()
+  const a = fakeAgent()
+  h.listeners.get('agent/created')({ agent: a.agent })
+  assert.deepEqual([...a.activeRestrictions], [{ allow: [] }])
+  h.run('web', a.agent, 'on')
+  const next = () => Promise.resolve({ kind: 'enter', messages: [] })
+  for (let i = 0; i < 3; i++) {
+    await h.listeners.get('agent/pre-step')({ agent: a.agent }, next)
+  }
+  assert.deepEqual([...a.activeRestrictions], [{ allow: ['web_search', 'web_fetch'] }])
+  h.run('web', a.agent, 'off')
+  await h.listeners.get('agent/pre-step')({ agent: a.agent }, next)
+  assert.deepEqual([...a.activeRestrictions], [{ allow: [] }])
+})
+
+test('agent disposal and plugin unload release owned masks', () => {
+  const h = harness()
+  const a = fakeAgent()
+  const b = fakeAgent()
+  h.listeners.get('agent/created')({ agent: a.agent })
+  h.listeners.get('agent/created')({ agent: b.agent })
+  h.listeners.get('agent/disposed')({ agent: a.agent })
+  assert.equal(a.activeRestrictions.size, 0)
+  assert.equal(b.activeRestrictions.size, 1)
+  h.dispose()
+  assert.equal(b.activeRestrictions.size, 0)
+})
+
+test('returning to Chat rebuilds the mask on the next step', async () => {
+  const h = harness()
+  const a = fakeAgent({ sessionId: 'round-trip' })
+  h.listeners.get('agent/created')({ agent: a.agent })
+  h.listeners.get('agent-preset/selected')('round-trip', 'ptc')
+  assert.equal(a.activeRestrictions.size, 0)
+  await h.listeners.get('agent/pre-step')({ agent: a.agent }, () => Promise.resolve({ kind: 'enter', messages: [] }))
+  assert.deepEqual([...a.activeRestrictions], [{ allow: [] }])
 })
