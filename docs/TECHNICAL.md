@@ -107,6 +107,22 @@ effort = options.reasoningEffort
 
 DSH 的 settings 表单只覆盖「active、可唯一寻址的 profile entry」的 volatile 字段；preset 子行属于预设定义的一部分，插件清单里显示为「由 agent preset 提供」，不提供编辑表单——这是为了避免一个模式的行为被本地改动悄悄覆盖。因此调参走用户覆盖文件，而不是在界面上改 preset 行。
 
+## 附件与图片（v0.4.0）
+
+请求里没有附件时，本模式与之前完全一致：`tools` 不出现，附件的处理开销为 **0 token**。只有当前这条用户消息带有上传文件时，本步才会多出一个 `read_attachment`（约 85 token 的 schema），并在 `agent/pre-step` 里把它的 `file` 块就地换成文本。
+
+| 类型 | 走法 | 结果 |
+| --- | --- | --- |
+| 图片（png/jpg/webp/gif） | 宿主原生多模态，不经过本插件 | 原样以 image 块发出，≤1024 token/张 |
+| 纯文本（txt/md/json/csv/源码…） | 内容 ≤8 KiB 直接内联 | 模型直接读到，无需调用工具 |
+| DOCX | 零依赖读取 `word/document.xml`（`zlib.inflateRawSync`，单段解压上限 8 MiB） | 段落/表格文字内联，`&amp;` 等实体还原 |
+| PDF / 老式 `.doc` / 其它二进制 | 不抽取，给一行诚实说明 | 建议截图上传（原生识图）或切到 Standard 模式 |
+| 大文件（>8 KiB 文本或 >32 MiB） | 内联前 8 KiB，其余用 `read_attachment(offset, limit)` 分页 | 模型按需续读，不阻塞首轮 |
+
+安全性：工具只接受**本会话当前用户消息**里的 `attachment_id`（`sha256:…`），路径完全不经手；`/web on` 时放行列表是 `web_search` + `web_fetch` + `read_attachment`，其它任何工具（含 `bash`、`working_directory`）依旧不可见。用户下一条纯文字消息进来时，白名单清空，请求立刻回到 `toolCount: 0`。
+
+唯一可见副作用：为了让模型读到内容，当前消息的 `file` 块被替换成文本，会话气泡里会显示这段抽取结果（历史消息不改写）。
+
 ## 已知限制
 
 - 其他插件注入的 **user 消息**（工作目录 reminder、记忆插件提示块等）不属于本插件的系统提示范围，仍会进入上下文；只装本插件时不会出现。

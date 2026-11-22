@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-22
+
+### Added
+
+- **Attachments in Chat mode, without giving up zero tools.** Images keep using
+  the host's native vision (no tool, ≤1024 tokens each). Small text files
+  (≤8 KiB) are inlined into the message. DOCX text is extracted with a
+  zero-dependency reader (`word/document.xml` via `zlib.inflateRawSync`, 8 MiB
+  per-part cap, XML entities decoded); PDF and legacy `.doc` files get one
+  honest note that suggests a screenshot or Standard mode instead of failing.
+- A `read_attachment` tool appears **only for the step whose current user
+  message carries an upload**, and pages through larger files with
+  `offset`/`limit`. It accepts only the `sha256:` ids of that message, so no
+  path is ever read. Next to `/web on`, the allow list becomes
+  `web_search` + `web_fetch` + `read_attachment`.
+- `/chat` reports attachments indirectly: a text-only turn still shows zero
+  tools in the request, so the token table in the README is unchanged.
+
+### Changed
+
+- Attachment state is captured from `agent/inbox/claimed` (the host evaluates
+  conditional tool registrations before any `agent/pre-step` hook), with the
+  pre-step projection kept as the fallback for engines that never emit it.
+
+### Notes
+
+- The current message's `file` block is replaced by its extracted text so the
+  model can read it; that text is what the transcript shows for the turn, and
+  history is not rewritten.
+
 ## [0.3.3] - 2026-11-22
 
 ### Fixed

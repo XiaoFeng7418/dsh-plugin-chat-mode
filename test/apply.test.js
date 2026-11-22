@@ -198,9 +198,9 @@ test('/tone custom requires text and stores it', () => {
   assert.equal(sectionText(h.sections, agent), '你是简洁的助手')
 })
 
-test('mounting restricts the preset scope to the two chat tools', () => {
+test('mounting restricts the preset scope to the chat tools', () => {
   const { presetRestrictions } = harness({}, { presetNames: ['bash', 'read', 'mcp__x__y'] })
-  assert.deepEqual(presetRestrictions, [{ allow: ['web_search', 'web_fetch'] }])
+  assert.deepEqual(presetRestrictions, [{ allow: ['web_search', 'web_fetch', 'read_attachment'] }])
 })
 
 test('a preset whose allow list the runtime rejects is left unrestricted', () => {
@@ -219,9 +219,9 @@ test('an agent scope falls back to an empty allow list when allow-own is rejecte
   assert.deepEqual(agent.restrictions, [{ allow: [] }])
 })
 
-test('a preset keeps only the two chat tools; an agent keeps them only while web is on', () => {
+test('a preset keeps only the chat tools; an agent keeps them only while web is on', async () => {
   const withOwn = harness({}, { presetNames: ['bash', 'web_search', 'web_fetch'] })
-  assert.deepEqual(withOwn.presetRestrictions, [{ allow: ['web_search', 'web_fetch'] }])
+  assert.deepEqual(withOwn.presetRestrictions, [{ allow: ['web_search', 'web_fetch', 'read_attachment'] }])
 
   const { listeners, run } = harness()
   const agent = fakeAgent({ names: ['web_search', 'web_fetch', 'other'] })
@@ -230,14 +230,14 @@ test('a preset keeps only the two chat tools; an agent keeps them only while web
   // whose `register` ignores the `when` option (0.2.1).
   assert.deepEqual(agent.restrictions, [{ allow: [] }])
   run('web', agent.agent, 'on')
-  listeners.get('agent/pre-step')({ agent: agent.agent }, () => Promise.resolve({ kind: 'enter', messages: [] }))
+  await listeners.get('agent/pre-step')({ agent: agent.agent }, () => Promise.resolve({ kind: 'enter', messages: [] }))
   assert.deepEqual(agent.restrictions, [{ allow: [] }, { allow: ['web_search', 'web_fetch'] }])
   assert.deepEqual(listeners.size > 0, true)
 })
 
 test('the web tools stay hidden until /web on, and only those two are added', () => {
   const h = harness()
-  assert.deepEqual(h.registeredTools.map((entry) => entry.definition.name), ['web_search', 'web_fetch'])
+  assert.deepEqual(h.registeredTools.map((entry) => entry.definition.name), ['web_search', 'web_fetch', 'read_attachment'])
   const agent = fakeAgent().agent
   const when = h.registeredTools[0].options.when
   assert.equal(when({ agent }), false)
@@ -260,8 +260,49 @@ test('agent creation and later steps mask every tool the agent still inherits', 
   assert.equal(result, decision)
 })
 
-test('default thinking applies to the first turn of a fresh session only', () => {
+test('an upload exposes only read_attachment for that turn, and the next text-only turn removes it', async () => {
   const { listeners } = harness()
+  const agent = fakeAgent({ names: ['bash', 'read', 'read_attachment'] })
+  const fileMessage = {
+    role: 'user',
+    content: [
+      { type: 'text', text: 'summarize this' },
+      { type: 'file', attachment: { attachmentId: 'sha256:bb', name: 'b.txt', bytes: 2 } },
+    ],
+  }
+  const projected = await listeners.get('agent/pre-step')(
+    { agent: agent.agent },
+    () => Promise.resolve({ kind: 'enter', messages: [fileMessage] }),
+  )
+  assert.deepEqual(agent.restrictions.at(-1), { allow: ['read_attachment'] })
+  assert.equal(projected.messages[0].content.some((block) => block.type === 'file'), false)
+  assert.match(projected.messages[0].content.at(-1).text, /attachment_id="sha256:bb"/u)
+  assert.doesNotMatch(projected.messages[0].content.at(-1).text, /Read that path with your file tools/u)
+
+  const followUp = { role: 'user', content: [{ type: 'text', text: 'thanks' }] }
+  await listeners.get('agent/pre-step')(
+    { agent: agent.agent },
+    () => Promise.resolve({ kind: 'enter', messages: [fileMessage, { role: 'assistant', content: [{ type: 'text', text: 'ok' }] }, followUp] }),
+  )
+  assert.deepEqual(agent.restrictions.at(-1), { allow: [] })
+})
+
+test('web access and an upload share one allow list without leaking anything else', async () => {
+  const { listeners, run } = harness()
+  const agent = fakeAgent({ names: ['bash', 'web_search', 'web_fetch', 'read_attachment'] })
+  run('web', agent.agent, 'on')
+  const message = {
+    role: 'user',
+    content: [{ type: 'file', attachment: { attachmentId: 'sha256:cc', name: 'c.docx', bytes: 4 } }],
+  }
+  await listeners.get('agent/pre-step')(
+    { agent: agent.agent },
+    () => Promise.resolve({ kind: 'enter', messages: [message] }),
+  )
+  assert.deepEqual(agent.restrictions.at(-1), { allow: ['web_search', 'web_fetch', 'read_attachment'] })
+})
+
+test('default thinking applies to the first turn of a fresh session only', () => {  const { listeners } = harness()
   const claimed = listeners.get('agent/inbox/claimed')
   const first = fakeAgent()
   claimed({ agent: first.agent, turn: 1 })

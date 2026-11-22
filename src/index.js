@@ -23,6 +23,17 @@ import { promptForTone } from './prompts.js'
 import { addUsage, INSTANCE_ID, resolveTemperature, stateOf } from './session.js'
 import { registerChatCommands } from './commands.js'
 import { CHAT_TOOL_NAMES, webToolDefinitions } from './webtools.js'
+import {
+  ATTACHMENT_TOOL_NAME,
+  attachmentToolDefinition,
+  createAttachmentLoader,
+  describeAttachment,
+  forgetTurnAttachments,
+  projectAttachments,
+  rememberClaimedMessage,
+  rememberTurnAttachments,
+  turnAttachments,
+} from './attachments.js'
 
 /** Cordis plugin name. */
 export const name = 'chat-mode'
@@ -73,10 +84,16 @@ export function apply(ctx, config = {}) {
   ctx.on('agent-preset/selected', (sessionId, preset) => {
     if (preset === 'chat') return
     for (const agent of agentMasks.keys()) {
-      if (agent?.session?.id === sessionId) releaseMask(agent)
+      if (agent?.session?.id === sessionId) {
+        forgetTurnAttachments(agent)
+        releaseMask(agent)
+      }
     }
   })
-  ctx.on('agent/disposed', ({ agent }) => { releaseMask(agent) })
+  ctx.on('agent/disposed', ({ agent }) => {
+    forgetTurnAttachments(agent)
+    releaseMask(agent)
+  })
 
   trace?.({
     via: 'apply',
@@ -126,8 +143,33 @@ export function apply(ctx, config = {}) {
     warn(`could not register web tools: ${error instanceof Error ? error.message : String(error)}`)
   }
 
+  // Uploads are the one thing chat mode must still serve: an attachment the
+  // user dragged in should not vanish behind "no tools". The tool only accepts
+  // ids the pre-step projection whitelisted for the turn in flight, so it adds
+  // one name to the request and no file-system reach at all.
+  const loadAttachment = createAttachmentLoader(() => {
+    try {
+      return ctx.get?.('attachments')
+    } catch {
+      return undefined
+    }
+  })
+  try {
+    const definition = attachmentToolDefinition({ load: loadAttachment, allowedOf: turnAttachments })
+    // 0.2.2+ owns `tools.definitions()` and honours `when`; 0.2.1 (DSH Go) has
+    // neither, so there the per-step allow list is the only switch.
+    const gate = typeof ctx.tools?.definitions === 'function'
+    if (gate) {
+      ctx.tools.register(definition, { when: ({ agent }) => turnAttachments(agent).size > 0 })
+    } else {
+      ctx.tools.register(definition)
+    }
+  } catch (error) {
+    warn(`could not register the attachment tool: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
   // A preset cannot unregister another plugin's global tools, so the scope is
-  // restricted to the two names above. An allow list is name-independent: a
+  // restricted to the names above. An allow list is name-independent: a
   // tool that a newer harness build adds later stays out without a plugin
   // update, which a deny list of today's names would not guarantee.
   maskGlobalTools(ctx, warn, trace)
@@ -148,9 +190,30 @@ export function apply(ctx, config = {}) {
   // must not smuggle it into an existing chat. The listener must hand the
   // step decision through: a waterfall listener that returns nothing would
   // replace the prepared step with `undefined`.
-  ctx.on('agent/pre-step', (payload, next) => {
-    replaceMask(payload.agent)
-    return next()
+  //
+  // The same step is where uploads are projected. The allow list was already
+  // captured from the inbox claim (the host resolves `when` before this hook);
+  // engines without that event fall back to the request's last user message.
+  const claimSeen = new WeakSet()
+  ctx.on('agent/pre-step', async (payload, next) => {
+    const decision = await next()
+    if (decision?.kind !== 'enter') return decision
+    const agent = payload?.agent
+    const allowed = claimSeen.has(agent)
+      ? turnAttachments(agent)
+      : rememberTurnAttachments(agent, decision.messages)
+    replaceMask(agent)
+    // Project even without readable attachments: older `file` blocks would
+    // otherwise still render the host's "Read that path with your file tools"
+    // sentence, which no turn in chat mode can honour.
+    const messages = await projectAttachments(decision.messages, allowed, async (ref) => {
+      const loaded = await loadAttachment(ref)
+      return describeAttachment(ref, loaded)
+    })
+    if (messages !== decision.messages) {
+      trace?.({ via: 'attachments:project', sessionId: agent?.session?.id ?? null, files: allowed.size })
+    }
+    return messages === decision.messages ? decision : { ...decision, messages }
   })
 
   // `agent/inbox/claimed` runs inside `inbox.claim()` before the step captures
@@ -158,6 +221,8 @@ export function apply(ctx, config = {}) {
   // on runtimes that dispatch it (0.2.2-rc.3). On 0.2.2-rc.1 the event is not
   // dispatched; the pre-step fallback below then covers later turns instead.
   ctx.on('agent/inbox/claimed', (payload) => {
+    claimSeen.add(payload?.agent)
+    rememberClaimedMessage(payload?.agent, payload?.message)
     replaceMask(payload?.agent)
     if (options.defaultThinking === 'off') defaultToNonThinking(payload?.agent, payload?.turn, warn, trace)
   })
@@ -286,7 +351,7 @@ function maskGlobalTools(ctx, warn, trace) {
       trace?.({ via: 'maskGlobalTools:no-service' })
       return
     }
-    applyScopeRestriction(tools, 'maskGlobalTools', warn, trace, [...CHAT_TOOL_NAMES], false)
+    applyScopeRestriction(tools, 'maskGlobalTools', warn, trace, [...CHAT_TOOL_NAMES, ATTACHMENT_TOOL_NAME], false)
   } catch (error) {
     trace?.({ via: 'maskGlobalTools:error', message: error instanceof Error ? error.message : String(error) })
     warn(`could not mask global tools: ${error instanceof Error ? error.message : String(error)}`)
@@ -386,7 +451,11 @@ function stripTools(agent, warn, trace, stateOf) {
       trace?.({ via: 'stripTools:no-service' })
       return
     }
-    const allow = stateOf(agent).web ? [...CHAT_TOOL_NAMES] : []
+    const allow = []
+    if (stateOf(agent).web) allow.push(...CHAT_TOOL_NAMES)
+    // An upload in the current user message is the only reason to expose a
+    // file-reading tool; the next text-only message builds an empty list again.
+    if (turnAttachments(agent).size > 0) allow.push(ATTACHMENT_TOOL_NAME)
     return applyScopeRestriction(tools, 'stripTools', warn, trace, allow, true)
   } catch (error) {
     trace?.({ via: 'stripTools:error', message: error instanceof Error ? error.message : String(error) })

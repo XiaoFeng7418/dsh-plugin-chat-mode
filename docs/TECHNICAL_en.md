@@ -107,6 +107,22 @@ Known gap: if another client runs `/web on|off` in the same session, this button
 
 DSH's settings forms only cover volatile fields of active, uniquely addressable profile entries. Preset sub-rows belong to the preset definition: the plugin inventory shows them as provided by an agent preset and offers no form, which keeps a mode's behaviour from being silently overridden by local edits. Tune the mode through the user file instead.
 
+## Attachments and images (v0.4.0)
+
+With no attachment on the current message the mode is unchanged: no `tools` field and **zero** attachment overhead. Only when the current user message carries an upload does that step gain one `read_attachment` schema (~85 tokens), and `agent/pre-step` replaces its `file` block with text in place.
+
+| Kind | Path | Result |
+| --- | --- | --- |
+| Image (png/jpg/webp/gif) | Host-native vision, untouched here | Sent as an image block, ≤1024 tokens each |
+| Plain text (txt/md/json/csv/source…) | Inlined when ≤8 KiB | The model reads it directly, no tool call |
+| DOCX | Zero-dependency read of `word/document.xml` (`zlib.inflateRawSync`, 8 MiB per-part cap) | Paragraph and table text inlined, XML entities decoded |
+| PDF / legacy `.doc` / other binaries | Not extracted; one honest note | Suggests a screenshot (native vision) or Standard mode |
+| Large files (>8 KiB text or >32 MiB) | First 8 KiB inline, the rest via `read_attachment(offset, limit)` | The model pages through on demand |
+
+Safety: the tool only accepts `attachment_id`s (`sha256:…`) from the **current** user message and never touches a path. While `/web on`, the allow list is `web_search` + `web_fetch` + `read_attachment`; every other tool (including `bash` and `working_directory`) stays invisible. The next text-only message clears the list, so the request returns to `toolCount: 0` immediately.
+
+One visible side effect: to let the model read the upload, the current message's `file` block becomes text, so the transcript shows that extracted text (history is not rewritten).
+
 ## Known limits
 
 - Content other plugins inject as **user messages** (workspace reminders, memory blocks) is outside this plugin's system-prompt scope and still appears; without such plugins it does not.

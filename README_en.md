@@ -84,6 +84,17 @@ In **Chat (lightweight)** mode two switches appear to the right of the composer,
 
 Both buttons read and write the same per-session state as the slash commands and the model chip, so typing `/think off` (or picking another reasoning level) updates them immediately, and clicking one is equivalent to running the command — no extra model request. They disappear in Standard / PTC / Minimal and other presets, so work modes keep their composer untouched.
 
+### Attachments and images (v0.4.0)
+
+Chat mode accepts images and documents without switching to Standard:
+
+- **Images** use native vision (≤1024 tokens each) and need no tool at all;
+- **Small text** (≤8 KiB) is inlined into the message;
+- **DOCX** text is extracted with zero dependencies; PDF and legacy `.doc` get one honest note and a suggestion to send a screenshot or use Standard mode;
+- Large files show the first 8 KiB and page the rest through `read_attachment`, which only exists for that step.
+
+With no attachment the request stays at `toolCount: 0`, and the allow list is bound to the current message: the next text-only turn returns to zero tools immediately. Format table, limits and the safety boundary live in [the technical notes](docs/TECHNICAL_en.md#attachments-and-images-v040).
+
 ## On DSH Go (Android)
 
 1. In the web UI open **Plugins → +**, enter `github:XiaoFeng7418/dsh-plugin-chat-mode` (or a release tarball / a local directory on the phone), install, then tap "enable".
