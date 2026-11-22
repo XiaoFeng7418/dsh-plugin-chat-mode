@@ -121,7 +121,7 @@ With no attachment on the current message the mode is unchanged: no `tools` fiel
 
 Safety: the tool only accepts `attachment_id`s (`sha256:…`) from the **current** user message and never touches a path. While `/web on`, the allow list is `web_search` + `web_fetch` + `read_attachment`; every other tool (including `bash` and `working_directory`) stays invisible. The next text-only message clears the list, so the request returns to `toolCount: 0` immediately.
 
-One visible side effect: to let the model read the upload, the current message's `file` block becomes text, so the transcript shows that extracted text (history is not rewritten).
+One visible side effect: to let the model read the upload, the current message's `file` block becomes text, so the transcript shows that extracted text (history is not rewritten). The reason is concrete — kept with the session, that text lets follow-up turns ("what did the third paragraph say?") work without a re-upload, and with an 8 KiB inline cap plus paged reads the size stays bounded. Send the same file in Standard mode when a pristine bubble matters more.
 
 ## Known limits
 
