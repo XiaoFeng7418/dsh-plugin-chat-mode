@@ -10,9 +10,10 @@
  *
  * Visuals follow DeepSeek's open-source chat front end,
  * https://github.com/deepseek-ai/chat-demo (MIT, Copyright (c) 2026 DeepSeek):
- * the toggle geometry, the selected/hover treatment and the two 14px outline
- * icon paths are adapted from `src/components/chatInput/ChatInput.module.css`
- * and `src/components/base/icons.tsx` in that repository. See NOTICE.
+ * the toggle geometry, the selected/hover treatment and the 14px outline
+ * vocabulary come from `src/components/chatInput/ChatInput.module.css` and
+ * `src/components/base/icons.tsx` in that repository; the two glyphs below are
+ * now composed as layered, independently animated parts. See NOTICE.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-plugin-chat-mode',
@@ -31,22 +32,30 @@ window.__ModuleLoader__.load({
      * accent cannot, because `--dsw-alias-brand-primary` is the near-black
      * wordmark color rather than the UI blue, so the blue is pinned here and
      * the container switches palette by the detected theme (light/dark).
+     *
+     * On the light theme the label is #3555e0 rather than the #4d6bfe accent:
+     * #4d6bfe on the 0.10 ice-blue fill measures ~3.7:1, below WCAG AA's
+     * 4.5:1 for 13px text, while #3555e0 measures ~5.2:1 on the same fill. The
+     * accent still paints the border; the dark theme keeps its #7c97ff pair.
+     *
+     * The tooltip is the web client's dark bubble in both themes, so it does
+     * not use the host's tooltip tokens.
      */
     const STYLES = `
 .chat-mode-toggles {
   --cm-accent: #4d6bfe;
   --cm-label: #3555e0;
   --cm-border: rgba(15, 17, 20, 0.14);
-  --cm-soft: rgba(77, 107, 254, 0.12);
-  --cm-soft: color-mix(in srgb, var(--cm-accent) 12%, transparent);
+  --cm-soft: rgba(77, 107, 254, 0.10);
+  --cm-soft: color-mix(in srgb, var(--cm-accent) 10%, transparent);
   --cm-soft-hover: rgba(77, 107, 254, 0.18);
   --cm-soft-hover: color-mix(in srgb, var(--cm-accent) 18%, transparent);
   --cm-hover: rgba(15, 17, 20, 0.06);
   --cm-glow: rgba(77, 107, 254, 0.22);
   --cm-focus: rgba(77, 107, 254, 0.25);
-  --cm-tip-bg: #ffffff;
-  --cm-tip-border: rgba(15, 23, 42, 0.08);
-  --cm-tip-text: #2b2f36;
+  --cm-tip-bg: #1f2329;
+  --cm-tip-border: rgba(255, 255, 255, 0.08);
+  --cm-tip-text: #ffffff;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -57,15 +66,12 @@ window.__ModuleLoader__.load({
   --cm-label: #a0b4ff;
   --cm-border: rgba(255, 255, 255, 0.18);
   --cm-soft: rgba(124, 151, 255, 0.16);
-  --cm-soft: color-mix(in srgb, var(--cm-accent) 20%, transparent);
+  --cm-soft: color-mix(in srgb, var(--cm-accent) 16%, transparent);
   --cm-soft-hover: rgba(124, 151, 255, 0.24);
-  --cm-soft-hover: color-mix(in srgb, var(--cm-accent) 28%, transparent);
+  --cm-soft-hover: color-mix(in srgb, var(--cm-accent) 24%, transparent);
   --cm-hover: rgba(255, 255, 255, 0.08);
   --cm-glow: rgba(124, 151, 255, 0.28);
   --cm-focus: rgba(124, 151, 255, 0.32);
-  --cm-tip-bg: #23262d;
-  --cm-tip-border: rgba(255, 255, 255, 0.10);
-  --cm-tip-text: #e8eaef;
 }
 /*
  * Selectors are deliberately container-scoped and doubled (element + class) so
@@ -113,10 +119,10 @@ window.__ModuleLoader__.load({
   border: 0;
   padding: 0;
 }
-.chat-mode-toggles button.chat-mode-toggle:hover:not(:disabled) {
+.chat-mode-toggles button.chat-mode-toggle:hover {
   background-color: var(--cm-hover);
 }
-.chat-mode-toggles button.chat-mode-toggle:active:not(:disabled) {
+.chat-mode-toggles button.chat-mode-toggle:active {
   transform: scale(0.96);
   transition-duration: 100ms;
 }
@@ -136,13 +142,17 @@ window.__ModuleLoader__.load({
   color: var(--cm-label);
   box-shadow: none;
 }
-.chat-mode-toggles button.chat-mode-toggle[aria-pressed='true']:hover:not(:disabled) {
+.chat-mode-toggles button.chat-mode-toggle[aria-pressed='true']:hover {
   background-color: var(--cm-soft-hover);
 }
 /*
- * One-shot activation motion: the class is attached only for the render that
- * follows an off -> on transition, so a plain re-render never rotates the icon
- * and turning a toggle off only eases the colors back.
+ * One-shot activation motion.
+ *
+ * data-turn is the direction marker written only for the render that follows
+ * a state change ('on' for off -> on, 'off' for on -> off) and removed again
+ * once the window closes, so every animation below runs exactly once, never
+ * loops, and never hangs off the resting [aria-pressed] state. Each icon part
+ * animates on its own layer; the <svg> itself never rotates as a whole.
  */
 .chat-mode-icon {
   display: inline-flex;
@@ -157,22 +167,82 @@ window.__ModuleLoader__.load({
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  transform-origin: center;
+}
+/* Layered atom: two elliptical orbits and a fixed centre core. */
+.cm-think-orbit,
+.cm-think-core {
   transform-box: fill-box;
+  transform-origin: center;
 }
-.chat-mode-toggle[data-spin='think'] .chat-mode-icon svg {
-  animation: chat-mode-spin-think 440ms cubic-bezier(0.22, 1, 0.36, 1);
+.chat-mode-toggle[data-turn='on'] .cm-think-orbit-a {
+  animation: cm-think-turn-on-a 460ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.chat-mode-toggle[data-spin='web'] .chat-mode-icon svg {
-  animation: chat-mode-spin-web 400ms cubic-bezier(0.22, 1, 0.36, 1);
+.chat-mode-toggle[data-turn='on'] .cm-think-orbit-b {
+  animation: cm-think-turn-on-b 400ms cubic-bezier(0.22, 1, 0.36, 1) 60ms;
 }
-@keyframes chat-mode-spin-think {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(180deg); }
+.chat-mode-toggle[data-turn='on'] .cm-think-core {
+  animation: cm-think-core-pulse 460ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-@keyframes chat-mode-spin-web {
-  from { transform: rotate(-24deg); }
-  to { transform: rotate(0deg); }
+.chat-mode-toggle[data-turn='off'] .cm-think-orbit-a {
+  animation: cm-think-turn-off-a 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat-mode-toggle[data-turn='off'] .cm-think-orbit-b {
+  animation: cm-think-turn-off-b 360ms cubic-bezier(0.22, 1, 0.36, 1) 60ms;
+}
+/*
+ * Turn on: the two orbits sweep in opposite directions while a scale on the
+ * other axis fakes a 3D flatten, then settle back to the flat resting pose.
+ * The final frame is a half turn, which a symmetric ellipse shows as identity,
+ * and the animation has no fill mode, so the element rests untransformed.
+ */
+@keyframes cm-think-turn-on-a {
+  from { transform: rotate(0deg) scaleX(1); }
+  50% { transform: rotate(90deg) scaleX(0.72); }
+  to { transform: rotate(180deg) scaleX(1); }
+}
+@keyframes cm-think-turn-on-b {
+  from { transform: rotate(0deg) scaleY(1); }
+  50% { transform: rotate(-90deg) scaleY(0.72); }
+  to { transform: rotate(-180deg) scaleY(1); }
+}
+/* Turn off: the same two orbits, reversed, with the mirrored delay. */
+@keyframes cm-think-turn-off-a {
+  from { transform: rotate(0deg) scaleX(1); }
+  50% { transform: rotate(-90deg) scaleX(0.72); }
+  to { transform: rotate(-180deg) scaleX(1); }
+}
+@keyframes cm-think-turn-off-b {
+  from { transform: rotate(0deg) scaleY(1); }
+  50% { transform: rotate(90deg) scaleY(0.72); }
+  to { transform: rotate(180deg) scaleY(1); }
+}
+/* The core breathes, never orbits. */
+@keyframes cm-think-core-pulse {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+/*
+ * Globe: only the curves inside the clipPath move. The outer ring and the
+ * equator are separate, static elements, so they never rotate.
+ */
+.cm-globe-meridians {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.chat-mode-toggle[data-turn='on'] .cm-globe-meridians {
+  animation: cm-globe-turn-on 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.chat-mode-toggle[data-turn='off'] .cm-globe-meridians {
+  animation: cm-globe-turn-off 440ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes cm-globe-turn-on {
+  from { transform: translateX(-2.4px) scaleX(0.9); }
+  to { transform: translateX(0) scaleX(1); }
+}
+@keyframes cm-globe-turn-off {
+  from { transform: translateX(2.4px) scaleX(1); }
+  to { transform: translateX(0) scaleX(1); }
 }
 .chat-mode-toggles .chat-mode-toggle::after {
   content: attr(data-tooltip);
@@ -185,7 +255,7 @@ window.__ModuleLoader__.load({
   border: 1px solid var(--cm-tip-border);
   background-color: var(--cm-tip-bg);
   color: var(--cm-tip-text);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
   font-size: 12px;
   line-height: 18px;
   font-weight: 400;
@@ -214,21 +284,23 @@ window.__ModuleLoader__.load({
 .chat-mode-toggles .chat-mode-toggle[data-tooltip-muted='true']::after {
   content: none;
 }
-.chat-mode-toggles .chat-mode-toggle:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.chat-mode-toggles .chat-mode-toggle:disabled::after {
-  content: none;
-}
+/*
+ * No :disabled rules on purpose. A running /web command keeps the button
+ * fully interactive (optimistic state + a ref lock in JS), so the platform's
+ * not-allowed cursor can never appear over it.
+ */
 @media (prefers-reduced-motion: reduce) {
   .chat-mode-toggles button.chat-mode-toggle,
   .chat-mode-toggles button.chat-mode-toggle::after,
-  .chat-mode-toggle .chat-mode-icon svg {
+  .chat-mode-toggle .chat-mode-icon,
+  .chat-mode-toggle .chat-mode-icon svg,
+  .chat-mode-toggle .cm-think-orbit,
+  .chat-mode-toggle .cm-think-core,
+  .chat-mode-toggle .cm-globe-meridians {
     transition: none !important;
     animation: none !important;
   }
-  .chat-mode-toggles button.chat-mode-toggle:active:not(:disabled) {
+  .chat-mode-toggles button.chat-mode-toggle:active {
     transform: none;
   }
 }
@@ -283,39 +355,108 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * 14px outline "think" glyph: a centre dot inside a rounded four-lobe
-     * outline. Path data adapted from chat-demo's IconThinkOutline14.
+     * 14px "think" glyph, rebuilt as a layered atom: two tilted elliptical
+     * orbits plus a fixed centre core. Every part is its own group, so the CSS
+     * animates the layers independently and the <svg> itself never rotates.
+     * The 14px outline vocabulary is still adapted from chat-demo's
+     * IconThinkOutline14.
      */
     function ThinkIcon() {
       return React.createElement(
         'svg',
         { viewBox: '0 0 14 14', fill: 'none', 'aria-hidden': true, focusable: 'false' },
-        React.createElement('path', {
+        React.createElement(
+          'g',
+          { className: 'cm-think-orbit cm-think-orbit-a' },
+          React.createElement('ellipse', {
+            cx: 7,
+            cy: 7,
+            rx: 6,
+            ry: 2.6,
+            transform: 'rotate(45 7 7)',
+            stroke: 'currentColor',
+            strokeWidth: 1.2,
+            fill: 'none',
+          }),
+        ),
+        React.createElement(
+          'g',
+          { className: 'cm-think-orbit cm-think-orbit-b' },
+          React.createElement('ellipse', {
+            cx: 7,
+            cy: 7,
+            rx: 6,
+            ry: 2.6,
+            transform: 'rotate(-45 7 7)',
+            stroke: 'currentColor',
+            strokeWidth: 1.2,
+            fill: 'none',
+          }),
+        ),
+        React.createElement('circle', {
+          className: 'cm-think-core',
+          cx: 7,
+          cy: 7,
+          r: 1.15,
           fill: 'currentColor',
-          d: 'M7.06431 5.93342C7.68763 5.93342 8.19307 6.43904 8.19322 7.06233C8.19322 7.68573 7.68772 8.19123 7.06431 8.19123C6.44099 8.19113 5.9354 7.68567 5.9354 7.06233C5.93555 6.43911 6.44108 5.93353 7.06431 5.93342Z',
-        }),
-        React.createElement('path', {
-          fill: 'currentColor',
-          fillRule: 'evenodd',
-          clipRule: 'evenodd',
-          d: 'M8.6815 0.963693C10.1169 0.447019 11.6266 0.374829 12.5633 1.31135C13.5 2.24805 13.4277 3.75776 12.911 5.19319C12.7126 5.74431 12.4386 6.31796 12.0965 6.89729C12.4969 7.54638 12.8141 8.19018 13.036 8.80647C13.5527 10.2419 13.6251 11.7516 12.6883 12.6883C11.7516 13.625 10.242 13.5527 8.8065 13.036C8.19022 12.8141 7.54641 12.4969 6.89732 12.0965C6.31797 12.4386 5.74435 12.7125 5.19322 12.911C3.75777 13.4276 2.2481 13.5 1.31138 12.5633C0.374859 11.6266 0.447049 10.1168 0.963724 8.68147C1.17185 8.10338 1.46321 7.50063 1.82896 6.8924C1.52182 6.35711 1.27235 5.82825 1.08872 5.31819C0.572068 3.88278 0.499714 2.37306 1.43638 1.43635C2.37308 0.499655 3.8828 0.572044 5.31822 1.08869C5.82828 1.27232 6.35715 1.5218 6.89243 1.82893C7.50066 1.46318 8.10341 1.17181 8.6815 0.963693ZM11.3573 8.01154C10.9083 8.62253 10.3901 9.22873 9.80943 9.8094C9.22877 10.3901 8.62255 10.9083 8.01158 11.3572C8.4257 11.5841 8.8287 11.7688 9.21275 11.9071C10.5456 12.3868 11.4246 12.2547 11.8397 11.8397C12.2548 11.4246 12.3869 10.5456 11.9071 9.21272C11.7688 8.82866 11.5841 8.42568 11.3573 8.01154ZM2.56529 8.02912C2.37344 8.39322 2.21495 8.74796 2.09263 9.08772C1.61291 10.4204 1.74512 11.2995 2.16001 11.7147C2.57505 12.1297 3.45415 12.2618 4.78697 11.7821C5.11057 11.6656 5.44786 11.5164 5.7938 11.3367C5.249 10.9223 4.70922 10.4533 4.19029 9.9344C3.57578 9.31987 3.03169 8.67633 2.56529 8.02912ZM6.90708 3.2469C6.24065 3.70479 5.5646 4.26321 4.91392 4.91389C4.26325 5.56456 3.70482 6.24063 3.24693 6.90705C3.72674 7.63325 4.32777 8.37459 5.03892 9.08576C5.64943 9.69627 6.28183 10.2265 6.90806 10.6678C7.59368 10.2025 8.2908 9.63076 8.96079 8.96076C9.6308 8.29075 10.2025 7.59366 10.6678 6.90803C10.2265 6.2818 9.69631 5.6494 9.08579 5.03889C8.37462 4.32773 7.63328 3.72672 6.90708 3.2469ZM11.7147 2.15998C11.2996 1.74509 10.4204 1.61288 9.08775 2.0926C8.74835 2.21479 8.39382 2.37271 8.03013 2.56428C8.67728 3.03065 9.31995 3.5758 9.93443 4.19026C10.4534 4.7092 10.9223 5.24896 11.3368 5.79377C11.5164 5.44785 11.6656 5.11052 11.7821 4.78694C12.2618 3.45416 12.1297 2.57502 11.7147 2.15998ZM4.91197 2.2176C3.57922 1.73788 2.70004 1.86995 2.28501 2.28498C1.87001 2.70003 1.73791 3.5792 2.21763 4.91194C2.31709 5.18822 2.44112 5.47427 2.58677 5.7674C3.01931 5.1887 3.51474 4.6158 4.06529 4.06526C4.61584 3.5147 5.18872 3.01928 5.76743 2.58674C5.47431 2.4411 5.18824 2.31706 4.91197 2.2176Z',
         }),
       )
     }
 
     /**
-     * 14px outline globe: circle plus one meridian and one parallel. Path data
-     * adapted from chat-demo's IconGlobeLanguageOutline14.
+     * Fixed clip id for the globe meridians. Only one globe toggle mounts per
+     * page (the composer renders a single chat-mode slot), so a constant id is
+     * enough and avoids useId inside this classic script.
+     */
+    const GLOBE_CLIP_ID = 'dsh-chat-globe-clip'
+
+    /**
+     * 14px outline globe: a static ring and equator, with three curved
+     * meridians inside a clipPath so only the curves move on activation. The
+     * 14px outline vocabulary is adapted from chat-demo's
+     * IconGlobeLanguageOutline14.
      */
     function GlobeIcon() {
+      const meridian = {
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        fill: 'none',
+      }
       return React.createElement(
         'svg',
         { viewBox: '0 0 14 14', fill: 'none', 'aria-hidden': true, focusable: 'false' },
-        React.createElement('path', {
-          fill: 'currentColor',
-          fillRule: 'evenodd',
-          clipRule: 'evenodd',
-          d: 'M7 0.150391C10.7832 0.150391 13.8496 3.21685 13.8496 7C13.8496 10.7832 10.7832 13.8496 7 13.8496C3.21685 13.8496 0.150391 10.7832 0.150391 7C0.150391 3.21685 3.21685 0.150391 7 0.150391ZM5.37793 7.59961C5.42667 9.03204 5.64751 10.2965 5.97363 11.2197C6.15993 11.7471 6.36943 12.1301 6.57324 12.3701C6.77748 12.6105 6.9234 12.6504 7 12.6504C7.0766 12.6504 7.22252 12.6105 7.42676 12.3701C7.63057 12.1301 7.84007 11.7471 8.02637 11.2197C8.35249 10.2965 8.57333 9.03204 8.62207 7.59961H5.37793ZM1.38184 7.59961C1.61453 9.80492 3.1159 11.6304 5.14258 12.3359C5.03265 12.1128 4.93224 11.8724 4.84277 11.6191C4.46339 10.5451 4.22772 9.13988 4.17871 7.59961H1.38184ZM9.82129 7.59961C9.77228 9.13988 9.53661 10.5451 9.15723 11.6191C9.06771 11.8726 8.96645 12.1127 8.85645 12.3359C10.8836 11.6307 12.3854 9.80524 12.6182 7.59961H9.82129ZM7 1.34961C6.9234 1.34961 6.77748 1.38949 6.57324 1.62988C6.36943 1.86988 6.15993 2.25291 5.97363 2.78027C5.64751 3.70351 5.42667 4.96796 5.37793 6.40039H8.62207C8.57333 4.96796 8.35249 3.70351 8.02637 2.78027C7.84007 2.25291 7.63057 1.86988 7.42676 1.62988C7.22252 1.38949 7.0766 1.34961 7 1.34961ZM8.85645 1.66309C8.9666 1.88656 9.0676 2.12715 9.15723 2.38086C9.53661 3.45487 9.77228 4.86012 9.82129 6.40039H12.6182C12.3854 4.19465 10.8837 2.36828 8.85645 1.66309ZM5.14258 1.66309C3.11575 2.3685 1.61454 4.19497 1.38184 6.40039H4.17871C4.22772 4.86012 4.46339 3.45487 4.84277 2.38086C4.93234 2.1273 5.03249 1.88645 5.14258 1.66309Z',
+        React.createElement(
+          'defs',
+          null,
+          React.createElement(
+            'clipPath',
+            { id: GLOBE_CLIP_ID },
+            React.createElement('circle', { cx: 7, cy: 7, r: 6.4 }),
+          ),
+        ),
+        React.createElement(
+          'g',
+          { className: 'cm-globe-meridians', clipPath: `url(#${GLOBE_CLIP_ID})` },
+          React.createElement('path', { d: 'M7 0.9 C 4.6 3, 4.6 11, 7 13.1', ...meridian }),
+          React.createElement('path', { d: 'M7 0.9 C 9.4 3, 9.4 11, 7 13.1', ...meridian }),
+          React.createElement('path', { d: 'M7 0.9 C 7 3.5, 7 10.5, 7 13.1', ...meridian }),
+        ),
+        React.createElement('circle', {
+          cx: 7,
+          cy: 7,
+          r: 6.4,
+          stroke: 'currentColor',
+          strokeWidth: 1.2,
+          fill: 'none',
+        }),
+        React.createElement('line', {
+          x1: 0.6,
+          y1: 7,
+          x2: 13.4,
+          y2: 7,
+          stroke: 'currentColor',
+          strokeWidth: 1.2,
+          strokeLinecap: 'round',
         }),
       )
     }
@@ -323,8 +464,12 @@ window.__ModuleLoader__.load({
     /**
      * One toggle button. `active` paints the on state, `tooltip` feeds the
      * delayed CSS bubble (no native `title`, whose black popup appears at 0ms),
-     * `spin` only exists on the render that follows an off -> on transition and
-     * `muted` keeps the bubble away after a click until the pointer leaves.
+     * `turn` is the one-shot direction marker ('turn-on' | 'turn-off' | null)
+     * and `muted` keeps the bubble away after a click until the pointer leaves.
+     *
+     * There is deliberately no `disabled` state: an in-flight command must not
+     * grey the button out or swap in a 🚫 cursor, so the press state is driven
+     * optimistically and double submits are stopped by a ref lock in JS.
      */
     function Toggle(props) {
       return React.createElement(
@@ -334,10 +479,9 @@ window.__ModuleLoader__.load({
           className: props.className,
           'data-tooltip': props.tooltip,
           'data-tooltip-muted': props.muted === true ? 'true' : 'false',
-          'data-spin': props.spin === null ? undefined : props.spin,
+          'data-turn': props.turn === 'turn-on' ? 'on' : props.turn === 'turn-off' ? 'off' : undefined,
           'aria-description': props.tooltip,
           'aria-pressed': props.active,
-          disabled: props.disabled === true,
           onClick: props.onClick,
           onPointerDown: props.onPointerDown,
           onPointerLeave: props.onPointerLeave,
@@ -349,34 +493,38 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One-shot activation marker.
+     * One-shot direction state machine.
      *
-     * The icon may rotate only on a real off -> on transition, so the marker is
-     * derived from the previous render's value and cleared again shortly after.
-     * The sequence number keys the icon wrapper so a second activation restarts
-     * the CSS animation even though the attribute value is unchanged, and a
-     * plain re-render (theme change, store update, parent render) never sets it.
+     * `previous` starts at the first value, so the first render (and any plain
+     * re-render: theme change, store update, parent render) can never animate.
+     * Only off -> on yields 'turn-on' and only on -> off yields 'turn-off'. The
+     * marker is cleared after the animation window, which makes it a one-shot
+     * marker instead of a looping state; the sequence number keys the icon
+     * wrapper so a repeat activation restarts the CSS animation even though the
+     * marker value repeats.
      */
-    function useActivationSpin(active, kind) {
+    function useTurnAnimation(active, kind) {
       const previous = React.useRef(active)
-      const [spin, setSpin] = React.useState(null)
+      const [turn, setTurn] = React.useState(null)
       const [sequence, setSequence] = React.useState(0)
 
       React.useEffect(() => {
-        if (previous.current === false && active === true) {
-          setSpin(kind)
-          setSequence((count) => count + 1)
-        }
+        if (previous.current === active) return
         previous.current = active
-      }, [active, kind])
+        setTurn(active ? 'turn-on' : 'turn-off')
+        setSequence((count) => count + 1)
+      }, [active])
 
       React.useEffect(() => {
-        if (spin === null) return undefined
-        const timer = setTimeout(() => setSpin(null), kind === 'think' ? 470 : 430)
+        if (turn === null) return undefined
+        const duration = turn === 'turn-on'
+          ? (kind === 'think' ? 500 : 520)
+          : (kind === 'think' ? 460 : 480)
+        const timer = setTimeout(() => setTurn(null), duration)
         return () => clearTimeout(timer)
-      }, [spin, sequence, kind])
+      }, [turn, sequence, kind])
 
-      return { spin, iconKey: `${kind}-${sequence}` }
+      return { turn, iconKey: `${kind}-${sequence}` }
     }
 
     /** The two toggles, hidden unless this session runs the chat preset. */
@@ -384,9 +532,12 @@ window.__ModuleLoader__.load({
       const preset = useSnapshot(props.presetStore)
       const directory = useSnapshot(props.directoryStore)
       const [web, setWeb] = React.useState(() => props.webState.get(props.sessionId) === true)
-      const [busy, setBusy] = React.useState(false)
       const [theme, setTheme] = React.useState(() => detectTheme())
       const [muted, setMuted] = React.useState({ think: false, web: false })
+      // A ref, not state: it must already be true for a second click in the
+      // same tick, and a busy render must never turn the button into a
+      // disabled control.
+      const inFlight = React.useRef(false)
 
       const mute = React.useCallback((key, value) => {
         setMuted((current) => (current[key] === value ? current : { ...current, [key]: value }))
@@ -394,8 +545,8 @@ window.__ModuleLoader__.load({
 
       const effort = directory.current?.reasoningEffort
       const thinking = effort !== undefined && effort !== 'auto' && effort !== 'off'
-      const thinkSpin = useActivationSpin(thinking, 'think')
-      const webSpin = useActivationSpin(web, 'web')
+      const thinkTurn = useTurnAnimation(thinking, 'think')
+      const webTurn = useTurnAnimation(web, 'web')
 
       const toggleThinking = React.useCallback(async () => {
         const current = props.directoryStore.getSnapshot().current
@@ -408,20 +559,32 @@ window.__ModuleLoader__.load({
         }
       }, [props, thinking])
 
+      /**
+       * Optimistic web toggle.
+       *
+       * The pressed state flips before the command is sent, so the button never
+       * looks stuck behind the command round trip. A failed command rolls the
+       * visual state back to the previous value, re-arms the tooltip and leaves
+       * the remembered value untouched (it is only written on success).
+       */
       const toggleWeb = React.useCallback(async () => {
-        if (busy) return
+        if (inFlight.current) return
+        inFlight.current = true
+        const previous = web
         const next = !web
-        setBusy(true)
+        setWeb(next)
         try {
           await props.runCommand(next ? '/web on' : '/web off')
           props.rememberWeb(props.sessionId, next)
-          setWeb(next)
         } catch {
-          /* command failures surface in the transcript */
+          // Command failures surface in the transcript; the button must not
+          // stay stuck in a state the Host rejected.
+          setWeb(previous)
+          mute('web', false)
         } finally {
-          setBusy(false)
+          inFlight.current = false
         }
-      }, [busy, props, web])
+      }, [mute, props, web])
 
       React.useEffect(() => {
         ensureStyles()
@@ -456,8 +619,8 @@ window.__ModuleLoader__.load({
           onPointerLeave: () => mute('think', false),
           onBlur: () => mute('think', false),
           muted: muted.think,
-          spin: thinkSpin.spin,
-          iconKey: thinkSpin.iconKey,
+          turn: thinkTurn.turn,
+          iconKey: thinkTurn.iconKey,
           className: 'chat-mode-toggle chat-toggle-thinking',
           icon: React.createElement(ThinkIcon, null),
           label: label('深度思考', 'DeepThink'),
@@ -470,9 +633,8 @@ window.__ModuleLoader__.load({
           onPointerLeave: () => mute('web', false),
           onBlur: () => mute('web', false),
           muted: muted.web,
-          spin: webSpin.spin,
-          iconKey: webSpin.iconKey,
-          disabled: busy,
+          turn: webTurn.turn,
+          iconKey: webTurn.iconKey,
           className: 'chat-mode-toggle chat-toggle-web',
           icon: React.createElement(GlobeIcon, null),
           label: label('联网搜索', 'Search'),

@@ -75,7 +75,7 @@ Type them in the composer. Everything runs **locally**: no tokens, no extra requ
 
 Switches live in memory for the current session only; a DSH restart falls back to the configured defaults — run `/chat save` to keep a choice.
 
-### Composer toggles (v0.3.0)
+### Composer toggles (v0.3.0, motion refreshed in v0.4.1)
 
 In **Chat (lightweight)** mode two switches appear to the right of the composer, the same way the web client does it:
 

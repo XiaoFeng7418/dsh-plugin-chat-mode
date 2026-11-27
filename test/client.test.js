@@ -93,35 +93,145 @@ test('state changes ease instead of snapping', () => {
   assert.match(client, /border-color 180ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/)
   assert.match(client, /color 180ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/)
   assert.match(client, /box-shadow 180ms cubic-bezier\(0\.4, 0, 0\.2, 1\)/)
-  assert.match(client, /button\.chat-mode-toggle:active:not\(:disabled\) \{\s*transform: scale\(0\.96\)/)
+  assert.match(client, /button\.chat-mode-toggle:active \{\s*transform: scale\(0\.96\)/)
   assert.match(client, /transition-duration: 100ms/)
   assert.match(client, /prefers-reduced-motion: reduce/)
   assert.match(client, /animation: none !important/)
 })
 
-test('activation rotates the icon once with the DeepSeek easing', () => {
+test('the think icon is a layered atom, not a rotating whole svg', () => {
   assert.doesNotMatch(client, /chat-mode-icon-pop/, 'the old scale-bounce must be gone')
-  assert.match(client, /@keyframes chat-mode-spin-think\s*\{\s*from \{ transform: rotate\(0deg\); \}\s*to \{ transform: rotate\(180deg\); \}/)
-  assert.match(client, /@keyframes chat-mode-spin-web\s*\{\s*from \{ transform: rotate\(-24deg\); \}\s*to \{ transform: rotate\(0deg\); \}/)
-  assert.match(client, /chat-mode-spin-think 440ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/)
-  assert.match(client, /chat-mode-spin-web 400ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/)
-  assert.match(client, /transform-origin: center/)
-  assert.match(client, /transform-box: fill-box/)
-  // The animation must hang off the one-shot marker, never off the resting state.
-  assert.match(client, /\[data-spin='think'\] \.chat-mode-icon svg/)
-  assert.match(client, /\[data-spin='web'\] \.chat-mode-icon svg/)
-  assert.doesNotMatch(client, /\[aria-pressed='true'\] svg \{\s*animation/)
+  // Two tilted elliptical orbits, each its own group, plus a fixed centre core.
+  assert.equal((client.match(/cm-think-orbit cm-think-orbit-a/g) ?? []).length, 1)
+  assert.equal((client.match(/cm-think-orbit cm-think-orbit-b/g) ?? []).length, 1)
+  assert.match(client, /createElement\('ellipse', \{\s*cx: 7,\s*cy: 7,\s*rx: 6,\s*ry: 2\.6,\s*transform: 'rotate\(45 7 7\)'/)
+  assert.match(client, /createElement\('ellipse', \{\s*cx: 7,\s*cy: 7,\s*rx: 6,\s*ry: 2\.6,\s*transform: 'rotate\(-45 7 7\)'/)
+  assert.match(client, /className: 'cm-think-core',\s*cx: 7,\s*cy: 7,\s*r: 1\.15,\s*fill: 'currentColor'/)
+  // Each layer must rotate around its own centre, never the viewport origin.
+  assert.match(client, /\.cm-think-orbit,\s*\.cm-think-core \{\s*transform-box: fill-box;\s*transform-origin: center;/)
+  // The svg itself must never be the animated element.
+  assert.doesNotMatch(client, /\[data-turn\] \.chat-mode-icon svg\s*\{/)
+  assert.doesNotMatch(client, /\[aria-pressed='true'\] \.chat-mode-icon svg\s*\{\s*animation/)
 })
 
-test('the spin marker only fires on a real off -> on transition', () => {
+test('turn on sweeps the two orbits in opposite directions with a stagger', () => {
+  assert.match(client, /\.chat-mode-toggle\[data-turn='on'\] \.cm-think-orbit-a \{\s*animation: cm-think-turn-on-a 460ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/)
+  assert.match(client, /\.chat-mode-toggle\[data-turn='on'\] \.cm-think-orbit-b \{\s*animation: cm-think-turn-on-b 400ms cubic-bezier\(0\.22, 1, 0\.36, 1\) 60ms;/)
+  // Orbit A turns clockwise with a horizontal flatten, B turns anticlockwise with
+  // a vertical flatten, both ending on identity so no permanent tilt remains.
+  assert.match(client, /@keyframes cm-think-turn-on-a \{\s*from \{ transform: rotate\(0deg\) scaleX\(1\); \}\s*50% \{ transform: rotate\(90deg\) scaleX\(0\.72\); \}\s*to \{ transform: rotate\(180deg\) scaleX\(1\); \}/)
+  assert.match(client, /@keyframes cm-think-turn-on-b \{\s*from \{ transform: rotate\(0deg\) scaleY\(1\); \}\s*50% \{ transform: rotate\(-90deg\) scaleY\(0\.72\); \}\s*to \{ transform: rotate\(-180deg\) scaleY\(1\); \}/)
+  // The core pulses instead of orbiting.
+  assert.match(client, /@keyframes cm-think-core-pulse \{\s*0% \{ transform: scale\(1\); \}\s*45% \{ transform: scale\(1\.18\); \}\s*100% \{ transform: scale\(1\); \}/)
+  assert.match(client, /\[data-turn='on'\] \.cm-think-core \{\s*animation: cm-think-core-pulse 460ms/)
+  // One-shot only: no fill mode pinning the last frame and no looping.
+  assert.doesNotMatch(client, /animation-fill-mode|animation: [^;]*infinite|infinite/)
+})
+
+test('turn off runs the same orbits backwards', () => {
+  assert.match(client, /\.chat-mode-toggle\[data-turn='off'\] \.cm-think-orbit-a \{\s*animation: cm-think-turn-off-a 420ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/)
+  assert.match(client, /\.chat-mode-toggle\[data-turn='off'\] \.cm-think-orbit-b \{\s*animation: cm-think-turn-off-b 360ms cubic-bezier\(0\.22, 1, 0\.36, 1\) 60ms;/)
+  assert.match(client, /@keyframes cm-think-turn-off-a \{\s*from \{ transform: rotate\(0deg\) scaleX\(1\); \}\s*50% \{ transform: rotate\(-90deg\) scaleX\(0\.72\); \}\s*to \{ transform: rotate\(-180deg\) scaleX\(1\); \}/)
+  assert.match(client, /@keyframes cm-think-turn-off-b \{\s*from \{ transform: rotate\(0deg\) scaleY\(1\); \}\s*50% \{ transform: rotate\(90deg\) scaleY\(0\.72\); \}\s*to \{ transform: rotate\(180deg\) scaleY\(1\); \}/)
+  // Off must not re-trigger the switch-on core pulse.
+  assert.doesNotMatch(client, /\[data-turn='off'\] \.cm-think-core \{\s*animation/)
+})
+
+test('the globe meridians slide inside the clipPath while the ring stays still', () => {
+  assert.equal((client.match(/dsh-chat-globe-clip/g) ?? []).length, 1, 'the clip id must be declared once')
+  assert.match(client, /const GLOBE_CLIP_ID = 'dsh-chat-globe-clip'/)
+  assert.match(client, /createElement\(\s*'clipPath',\s*\{ id: GLOBE_CLIP_ID \}/)
+  assert.match(client, /className: 'cm-globe-meridians', clipPath: `url\(#\$\{GLOBE_CLIP_ID\}\)`/)
+  // Two to three curved meridians inside the clipped group.
+  const clipped = /className: 'cm-globe-meridians', clipPath: `url\(#\$\{GLOBE_CLIP_ID\}\)` \},([\s\S]*?)\),\s*React\.createElement\('circle'/.exec(client)
+  assert.ok(clipped, 'the clipped meridian group must precede the static ring')
+  assert.ok((clipped[1].match(/createElement\('path'/g) ?? []).length >= 2, 'at least two meridians')
+  // Only the meridian group is animated; the static ring and equator are not.
+  assert.match(client, /\.chat-mode-toggle\[data-turn='on'\] \.cm-globe-meridians \{\s*animation: cm-globe-turn-on 480ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/)
+  assert.match(client, /\.chat-mode-toggle\[data-turn='off'\] \.cm-globe-meridians \{\s*animation: cm-globe-turn-off 440ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/)
+  assert.match(client, /@keyframes cm-globe-turn-on \{\s*from \{ transform: translateX\(-2\.4px\) scaleX\(0\.9\); \}\s*to \{ transform: translateX\(0\) scaleX\(1\); \}/)
+  assert.match(client, /@keyframes cm-globe-turn-off \{\s*from \{ transform: translateX\(2\.4px\) scaleX\(1\); \}\s*to \{ transform: translateX\(0\) scaleX\(1\); \}/)
+  assert.match(client, /\.cm-globe-meridians \{\s*transform-box: fill-box;\s*transform-origin: center;/)
+  assert.doesNotMatch(client, /\[data-turn\] \.chat-mode-globe \{\s*animation/)
+})
+
+test('the direction marker only fires on a real state change', () => {
+  // data-turn is written from the hook's one-shot marker, never from aria-pressed.
+  assert.match(client, /'data-turn': props\.turn === 'turn-on' \? 'on' : props\.turn === 'turn-off' \? 'off' : undefined/)
+  assert.match(client, /function useTurnAnimation\(active, kind\) \{/)
   assert.match(client, /const previous = React\.useRef\(active\)/)
-  assert.match(client, /previous\.current === false && active === true/)
-  assert.match(client, /previous\.current = active/)
-  assert.match(client, /setSpin\(kind\)/)
-  assert.match(client, /setTimeout\(\(\) => setSpin\(null\)/)
-  // A keyed wrapper is what restarts the CSS animation on the second activation.
+  assert.match(client, /if \(previous\.current === active\) return/)
+  assert.match(client, /previous\.current = active\s*setTurn\(active \? 'turn-on' : 'turn-off'\)/)
+  // Both directions use the same marker, so a repeat activation needs the key.
+  assert.match(client, /setSequence\(\(count\) => count \+ 1\)/)
   assert.match(client, /iconKey: `\$\{kind\}-\$\{sequence\}`/)
   assert.match(client, /key: props\.iconKey/)
+  // The window clears the marker again: 500/520 on, 460/480 off.
+  assert.match(client, /turn === 'turn-on'\s*\? \(kind === 'think' \? 500 : 520\)/)
+  assert.match(client, /: \(kind === 'think' \? 460 : 480\)/)
+  assert.match(client, /setTimeout\(\(\) => setTurn\(null\), duration\)/)
+  // Each icon owns its own instance of the state machine.
+  assert.match(client, /const thinkTurn = useTurnAnimation\(thinking, 'think'\)/)
+  assert.match(client, /const webTurn = useTurnAnimation\(web, 'web'\)/)
+  // The old whole-svg spin machine must be gone.
+  assert.doesNotMatch(client, /useActivationSpin|data-spin|chat-mode-spin/)
+})
+
+test('a running web command never disables the pill', () => {
+  assert.match(client, /cursor: pointer/)
+  assert.doesNotMatch(client, /cursor: not-allowed/)
+  assert.doesNotMatch(client, /button\.chat-mode-toggle:disabled\s*\{/)
+  // The Toggle component must not receive a disabled attribute at all.
+  assert.doesNotMatch(client, /\bdisabled: (?:true|busy)/)
+  assert.doesNotMatch(client, /aria-disabled/)
+})
+
+test('the web toggle flips before it awaits and rolls back on failure', () => {
+  const start = client.indexOf('const toggleWeb = React.useCallback')
+  const end = client.indexOf('}, [mute, props, web])', start)
+  assert.ok(start >= 0 && end > start, 'toggleWeb must exist')
+  const body = client.slice(start, end)
+  // The press state moves before the command leaves.
+  assert.match(body, /if \(inFlight\.current\) return/)
+  assert.match(body, /inFlight\.current = true/)
+  assert.match(body, /const previous = web/)
+  assert.match(body, /const next = !web/)
+  assert.ok(body.indexOf('setWeb(next)') !== -1, 'optimistic flip must exist')
+  assert.ok(
+    body.indexOf('setWeb(next)') < body.indexOf('await props.runCommand'),
+    'the flip must happen before the await',
+  )
+  // Only a success is remembered; a failure restores the previous value.
+  assert.match(body, /await props\.runCommand\(next \? '\/web on' : '\/web off'\)/)
+  assert.match(body, /props\.rememberWeb\(props\.sessionId, next\)/)
+  assert.ok(body.indexOf('props.rememberWeb') > body.indexOf('await props.runCommand'))
+  const catchBlock = body.slice(body.indexOf('} catch {'))
+  assert.match(catchBlock, /setWeb\(previous\)/)
+  assert.match(catchBlock, /mute\('web', false\)/)
+  // The lock is released whatever happens.
+  assert.match(body, /\} finally \{\s*inFlight\.current = false/)
+})
+
+test('the tooltip is the dark web bubble in both themes', () => {
+  assert.match(client, /--cm-tip-bg: #1f2329/)
+  assert.match(client, /--cm-tip-text: #ffffff/)
+  assert.match(client, /--cm-tip-border: rgba\(255, 255, 255, 0\.08\)/)
+  assert.match(client, /border-radius: 8px/)
+  assert.match(client, /box-shadow: 0 10px 28px rgba\(0, 0, 0, 0\.32\)/)
+  // The old light bubble colours are gone; dark theme inherits the same bubble.
+  assert.doesNotMatch(client, /--cm-tip-bg: #ffffff/)
+  assert.doesNotMatch(client, /--cm-tip-bg: #23262d/)
+  assert.doesNotMatch(client, /--cm-tip-text: #(?:1f2329|23262d)/)
+})
+
+test('reduced motion disables every icon animation', () => {
+  const block = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/.exec(client)
+  assert.ok(block, 'the reduced motion guard must exist')
+  for (const selector of ['.chat-mode-icon', '.cm-think-orbit', '.cm-think-core', '.cm-globe-meridians']) {
+    assert.ok(block[1].includes(selector), `${selector} must be covered by the guard`)
+  }
+  assert.match(block[1], /transition: none !important/)
+  assert.match(block[1], /animation: none !important/)
 })
 
 test('the pill owns its border so no square host frame can appear', () => {
@@ -173,7 +283,5 @@ test('a click suppresses the tooltip until the pointer leaves', () => {
 test('the tooltip copy matches the product wording', () => {
   assert.match(client, /label\('先思考后回答，解决推理问题', 'Think before answering to solve reasoning tasks'\)/)
   assert.match(client, /label\('按需搜索网页', 'Search the web as needed'\)/)
-  assert.match(client, /--cm-tip-bg: #ffffff/)
-  assert.match(client, /--cm-tip-bg: #23262d/)
   assert.match(client, /border: 1px solid var\(--cm-tip-border\)/)
 })

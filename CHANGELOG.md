@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-11-27
+
+### Changed
+
+- **The two Chat toggles now move the way the web app does.** The thinking icon
+  is a layered atom (fixed core plus two tilted orbits) instead of one rotating
+  glyph: turning it on sweeps the orbits in opposite directions with a slight
+  perspective squash, and turning it off runs the same motion backwards and fades
+  out. The search icon keeps its ring and equator still while three meridians
+  slide inside a clip path. Both play once per real state change — the first
+  mount, unrelated re-renders and theme switches stay still — and respect
+  `prefers-reduced-motion`.
+- **No more disabled cursor.** The search pill no longer goes `disabled` (and
+  never shows the red "no" cursor) while its command runs: the pill flips
+  optimistically, an internal lock swallows double clicks, and a failed command
+  rolls the state back.
+- **Tooltip matches the web app.** Dark charcoal bubble with white text in both
+  themes, still a 380 ms hover delay, still suppressed from the click until the
+  pointer leaves.
+
+### Fixed
+
+- The active pill's label keeps a 5.2:1 contrast ratio in the light theme
+  (`#3555e0` on the 10% ice-blue fill) while `#4D6BFE` paints the border and
+  icon; the dark theme keeps its lighter blue pair.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added
